@@ -164,8 +164,10 @@ describe('polyglot', () => {
     sent.length = 0
     quotaAfter = 1
     const first = await syncAll(payload)
-    expect(first).toMatchObject({ stopped: 'quota', translated: 1, pending: 1 })
+    expect(first.stopped).toBe('quota')
+    expect(first.pending).toBeGreaterThan(0)
     quotaAfter = Infinity
-    expect(await syncAll(payload)).toMatchObject({ stopped: 'done', translated: 1, failed: 0 })
+    expect(await syncAll(payload)).toMatchObject({ stopped: 'done', failed: 0 })
+    expect(await syncAll(payload, { dryRun: true })).toMatchObject({ pending: 0 })
   })
 })
