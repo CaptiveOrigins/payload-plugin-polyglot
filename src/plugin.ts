@@ -1,6 +1,7 @@
 import type { CollectionAfterChangeHook, CollectionBeforeChangeHook, CollectionConfig, Field, Plugin } from 'payload'
 
 import { FILLER, SKIP_KEYS } from './text.js'
+import { coverageEndpoint, syncEndpoint } from './endpoints.js'
 import { included, translateDocument } from './translate.js'
 import type { PolyglotOptions, ResolvedPolyglot } from './types.js'
 
@@ -96,6 +97,8 @@ export const polyglotPlugin =
       writeContext: options.writeContext,
       describe: options.describe,
       onPublish: options.onPublish ?? true,
+      canManage: options.canManage,
+      adminView: options.adminView ?? true,
       defaultLocale: loc.defaultLocale,
       locales: codes.filter((c) => c !== loc.defaultLocale),
     }
@@ -137,9 +140,21 @@ export const polyglotPlugin =
       ],
     }
 
+    const components = config.admin?.components ?? {}
     return {
       ...config,
       custom: { ...config.custom, polyglot: resolved },
+      endpoints: [...(config.endpoints ?? []), coverageEndpoint, syncEndpoint],
+      admin: resolved.adminView
+        ? {
+            ...config.admin,
+            components: {
+              ...components,
+              afterNavLinks: [...(components.afterNavLinks ?? []), '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotNavLink'],
+              views: { ...components.views, polyglot: { Component: '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotView', path: '/polyglot' } },
+            },
+          }
+        : config.admin,
       collections: [
         ...(config.collections ?? []).map((c) => {
           const targets = resolved.collections[c.slug]

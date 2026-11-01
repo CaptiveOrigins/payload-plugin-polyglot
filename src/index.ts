@@ -1,5 +1,6 @@
 export { polyglotPlugin, localizeFields } from './plugin.js'
-export { Budget, included, languageStatus, polyglotOf, syncAll, translateDocument, type SyncReport } from './translate.js'
+export { Budget, coverage, included, languageStatus, polyglotOf, syncAll, translateDocument, type CoverageRow, type SyncReport } from './translate.js'
+export { coverageEndpoint, syncEndpoint } from './endpoints.js'
 export { FILLER, SKIP_KEYS, textsOf, visitPaths, visitText, fingerprint, memoryKey } from './text.js'
 export { microsoftTranslator, type MicrosoftTranslatorOptions } from './microsoft.js'
 export { QuotaExceededError, type DocumentResult, type Item, type PolyglotOptions, type ResolvedPolyglot, type TranslateArgs, type Translator } from './types.js'

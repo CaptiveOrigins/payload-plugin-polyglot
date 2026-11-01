@@ -26,6 +26,14 @@
     "./claude": {
       "types": "./dist/claude.d.ts",
       "import": "./dist/claude.js"
+    },
+    "./rsc": {
+      "types": "./dist/rsc/index.d.ts",
+      "import": "./dist/rsc/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -47,8 +55,11 @@
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": ">=1.0.0",
+    "@payloadcms/next": "^3.80.0",
+    "@payloadcms/ui": "^3.80.0",
     "next": ">=15",
-    "payload": "^3.80.0"
+    "payload": "^3.80.0",
+    "react": ">=19"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/sdk": {
@@ -61,7 +72,10 @@
   "devDependencies": {
     "@anthropic-ai/sdk": "1.3.0",
     "@payloadcms/db-mongodb": "3.92.1",
+    "@payloadcms/next": "3.92.1",
+    "@payloadcms/ui": "3.92.1",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
     "graphql": "^16.14.2",
     "mongodb-memory-server": "^11.3.0",
     "next": "16.3.3",

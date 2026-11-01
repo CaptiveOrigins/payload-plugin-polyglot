@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { buildConfig, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { languageStatus, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
+import { coverage, languageStatus, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
 
 let payload: Payload
 let mongo: MongoMemoryReplSet
@@ -147,6 +147,16 @@ describe('polyglot', () => {
     expect(r).toMatchObject({ documents: 2, translated: 2, failed: 0 })
     expect(sent.map((s) => s.locale)).toEqual(['batch'])
     expect(await syncAll(payload, { dryRun: true })).toMatchObject({ pending: 0 })
+  })
+
+  it('reports coverage and translates by collection and language on request', async () => {
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Fourth', _status: 'published' } as never })
+    const before = (await coverage(payload, { collections: ['pages'] }))[0]!
+    expect(before.locales.es!.pending).toBeGreaterThan(0)
+    const r = await syncAll(payload, { collections: ['pages'], locales: ['fr'] })
+    expect(r.translated).toBeGreaterThan(0)
+    expect(await languageStatus(payload, 'pages', { id: page.id }, 'fr')).toBe('machine')
+    expect(await languageStatus(payload, 'pages', { id: page.id }, 'es')).toBe('pending')
   })
 
   it('stops cleanly when the engine quota is used up, and continues next run', async () => {

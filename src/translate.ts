@@ -191,15 +191,19 @@ export type SyncReport = {
  * cleanly at `maxCharactersPerRun` or when the engine's quota is used up; the
  * next run continues. `dryRun` only reports what is pending.
  */
-export async function syncAll(payload: Payload, opts: { dryRun?: boolean; useBatch?: boolean; limit?: number } = {}): Promise<SyncReport> {
+export async function syncAll(
+  payload: Payload,
+  opts: { dryRun?: boolean; useBatch?: boolean; limit?: number; collections?: string[]; locales?: string[] } = {},
+): Promise<SyncReport> {
   const o = polyglotOf(payload)
   const report: SyncReport = { documents: 0, upToDate: 0, translated: 0, pending: 0, reviewedStale: 0, failed: 0, characters: 0, stopped: 'done' }
   const budget = new Budget(o.maxCharactersPerRun)
   const targets: { collection: string; id: string }[] = []
-  for (const collection of Object.keys(o.collections)) {
+  for (const collection of Object.keys(o.collections).filter((c) => !opts.collections || opts.collections.includes(c))) {
     const { docs } = await payload.find({ collection: collection as CollectionSlug, locale: o.defaultLocale as never, depth: 0, pagination: false, overrideAccess: true, draft: false })
     for (const d of docs as Record<string, unknown>[]) if (included(o, collection, d)) targets.push({ collection, id: String(d.id) })
   }
+  const locales = opts.locales ?? o.locales
   const work = opts.limit ? targets.slice(0, opts.limit) : targets
   const batching = Boolean(opts.useBatch && o.translator.batch && !o.translatorFor && !opts.dryRun)
 
@@ -208,7 +212,7 @@ export async function syncAll(payload: Payload, opts: { dryRun?: boolean; useBat
     for (const t of work) {
       const src = await loadSource(payload, o, t.collection, t.id)
       if (!src) continue
-      for (const locale of o.locales) {
+      for (const locale of locales) {
         if (src.state.get(locale)?.hash === src.hash || src.reviewed.has(locale)) continue
         const set = missing.get(locale) ?? new Set<string>()
         for (const text of src.texts) set.add(text)
@@ -237,7 +241,7 @@ export async function syncAll(payload: Payload, opts: { dryRun?: boolean; useBat
   for (const t of work) {
     let r: DocumentResult
     try {
-      r = await translateDocument(payload, t.collection, t.id, { dryRun: opts.dryRun, memoryOnly: batching, budget: batching ? undefined : budget })
+      r = await translateDocument(payload, t.collection, t.id, { locales, dryRun: opts.dryRun, memoryOnly: batching, budget: batching ? undefined : budget })
     } catch (error) {
       if (!(error instanceof QuotaExceededError)) throw error
       r = (error as QuotaExceededError & { result: DocumentResult }).result
@@ -271,4 +275,36 @@ export async function languageStatus(payload: Payload, collection: string, doc: 
   const row = docs[0] as unknown as StateRow | undefined
   if (reviewed) return row?.stale ? ('stale' as const) : ('reviewed' as const)
   return row ? ('machine' as const) : ('pending' as const)
+}
+
+export type CoverageRow = {
+  collection: string
+  documents: number
+  /** Per language: up to date, waiting, reviewed by a human, reviewed but the source changed. */
+  locales: Record<string, { translated: number; pending: number; reviewed: number; stale: number }>
+}
+
+/** Translation coverage per collection and language (for the admin view and reports). */
+export async function coverage(payload: Payload, opts: { collections?: string[] } = {}): Promise<CoverageRow[]> {
+  const o = polyglotOf(payload)
+  const rows: CoverageRow[] = []
+  for (const collection of Object.keys(o.collections).filter((c) => !opts.collections || opts.collections.includes(c))) {
+    const row: CoverageRow = { collection, documents: 0, locales: Object.fromEntries(o.locales.map((l) => [l, { translated: 0, pending: 0, reviewed: 0, stale: 0 }])) }
+    const { docs } = await payload.find({ collection: collection as CollectionSlug, locale: o.defaultLocale as never, depth: 0, pagination: false, overrideAccess: true, draft: false })
+    for (const d of docs as Record<string, unknown>[]) {
+      if (!included(o, collection, d)) continue
+      const src = await loadSource(payload, o, collection, String(d.id))
+      if (!src) continue
+      row.documents++
+      for (const locale of o.locales) {
+        const r = src.state.get(locale)
+        const c = row.locales[locale]!
+        if (src.reviewed.has(locale)) r && r.hash !== src.hash ? c.stale++ : c.reviewed++
+        else if (r?.hash === src.hash) c.translated++
+        else c.pending++
+      }
+    }
+    rows.push(row)
+  }
+  return rows
 }

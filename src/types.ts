@@ -52,11 +52,15 @@ export type PolyglotOptions = {
   writeContext?: (args: { inRequest: boolean }) => RequestContext
   /** Short description for the translator ("Content of a page on a reptile-care website"). */
   describe?: (collection: string) => string
+  /** Who may see coverage and start translations in the admin. Default: any signed-in user. */
+  canManage?: (args: { req: PayloadRequest }) => boolean | Promise<boolean>
+  /** Add the Polyglot admin view (coverage per collection and language, Translate now). Default true. */
+  adminView?: boolean
   /** Translate after a document is published (in Next.js, after the response). Default true. */
   onPublish?: boolean
 }
 
-export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun'>> &
-  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun'> & { defaultLocale: string; locales: string[] }
+export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage'>> &
+  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage'> & { defaultLocale: string; locales: string[] }
 
 export type DocumentResult = { translated: string[]; upToDate: string[]; reviewedStale: string[]; failed: string[]; pending: string[] }
