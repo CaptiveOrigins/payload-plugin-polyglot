@@ -4,11 +4,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 
 type Counts = { translated: number; pending: number; reviewed: number; stale: number }
 type Row = { collection: string; documents: number; locales: Record<string, Counts> }
+type Status = { enabled: boolean; paused: boolean; skipped: string[]; charactersThisMonth: number; url: string | null }
 
 /** Coverage per collection and language, filtered by collection, with Translate now. */
 export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute: string; collections: string[]; labels: Record<string, string> }) {
   const [filter, setFilter] = useState('')
-  const [data, setData] = useState<{ locales: string[]; rows: Row[] } | null>(null)
+  const [data, setData] = useState<{ locales: string[]; rows: Row[]; settings?: Status } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const load = useCallback(async () => {
     setData(null)
@@ -54,6 +55,21 @@ export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute:
           Refresh
         </button>
       </div>
+      {data?.settings && (
+        <p style={{ margin: 0 }}>
+          <strong>Automatic translation:</strong>{' '}
+          {!data.settings.enabled ? 'off here (no engine, or turned off for this environment)' : data.settings.paused ? 'paused' : 'on'}
+          {' · '}
+          {data.settings.charactersThisMonth.toLocaleString()} characters sent this month
+          {data.settings.skipped.length ? ` · not machine-translated: ${data.settings.skipped.join(', ')}` : ''}
+          {data.settings.url && (
+            <>
+              {' · '}
+              <a href={data.settings.url}>Translation settings</a>
+            </>
+          )}
+        </p>
+      )}
       {message && <p>{message}</p>}
       {!data ? (
         <p>Loading coverage…</p>
@@ -84,6 +100,12 @@ export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute:
                   {data.locales.map((l) => {
                     const c = r.locales[l]!
                     const p = pct(c, r.documents)
+                    if (data.settings?.skipped.includes(l))
+                      return (
+                        <td key={l} style={{ ...cell, color: 'var(--theme-elevation-400)' }} title="Not machine-translated (Translation settings)">
+                          –
+                        </td>
+                      )
                     return (
                       <td key={l} style={{ ...cell, color: p === 100 ? 'var(--theme-success-600)' : undefined }} title={`${c.translated} machine, ${c.reviewed} reviewed, ${c.stale} reviewed but source changed, ${c.pending} pending`}>
                         {p}%{c.stale ? ' ⚠' : ''}
@@ -97,7 +119,7 @@ export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute:
         </div>
       )}
       <p style={{ color: 'var(--theme-elevation-500)', fontSize: '0.85em' }}>
-        Percent of documents translated (machine or reviewed). ⚠ marks reviewed translations whose source has changed. Click a language or collection to translate just that.
+        Percent of documents translated (machine or reviewed). ⚠ marks reviewed translations whose source has changed. Click a language or collection to translate just that. – marks languages not machine-translated.
       </p>
     </div>
   )

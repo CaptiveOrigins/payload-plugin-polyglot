@@ -8,7 +8,17 @@ export type Item = { key: string; text: string }
  * stay untranslated). `batch` (optional) translates many requests at once,
  * usually at a lower price and more slowly; the sweep prefers it.
  */
-export type TranslateArgs = { locale: string; items: Item[]; context?: string; sourceLocale: string; keep: string[] }
+export type TranslateArgs = {
+  locale: string
+  items: Item[]
+  context?: string
+  sourceLocale: string
+  keep: string[]
+  /** Editors' notes (tone, audience); AI engines use them, others may ignore them. */
+  instructions?: string
+  /** Preferred translations for this language; AI engines use them, others may ignore them. */
+  glossary?: { term: string; translation: string }[]
+}
 export type Translator = {
   translate: (args: TranslateArgs) => Promise<Map<string, string>>
   batch?: (requests: TranslateArgs[]) => Promise<Map<string, string>[]>
@@ -54,13 +64,21 @@ export type PolyglotOptions = {
   describe?: (collection: string) => string
   /** Who may see coverage and start translations in the admin. Default: any signed-in user. */
   canManage?: (args: { req: PayloadRequest }) => boolean | Promise<boolean>
+  /** Who may change Translation settings (pause, languages, glossary…). Default: `canManage`. */
+  canConfigure?: (args: { req: PayloadRequest }) => boolean | Promise<boolean>
+  /** Add the Translation settings global (admin-editable pause, skipped languages, glossary, usage). Default true. */
+  settings?: boolean
+  /** Slug of the settings global. Default `polyglot-settings`. */
+  settingsSlug?: string
+  /** Admin group of the settings global. Default `Settings`. */
+  settingsGroup?: string
   /** Add the Polyglot admin view (coverage per collection and language, Translate now). Default true. */
   adminView?: boolean
   /** Translate after a document is published (in Next.js, after the response). Default true. */
   onPublish?: boolean
 }
 
-export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage'>> &
-  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage'> & { defaultLocale: string; locales: string[] }
+export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure'>> &
+  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure'> & { defaultLocale: string; locales: string[] }
 
 export type DocumentResult = { translated: string[]; upToDate: string[]; reviewedStale: string[]; failed: string[]; pending: string[] }

@@ -46,8 +46,10 @@ const textOf = (m: Anthropic.Message) => m.content.flatMap((b) => (b.type === 't
 export type ClaudeTranslatorOptions = {
   /** An Anthropic client; default `new Anthropic()` (reads ANTHROPIC_API_KEY). */
   client?: Anthropic
-  /** Default `claude-opus-5-5`. */
+  /** Default `claude-haiku-5-5`: fast, very low cost, and close to Opus for website translation. */
   model?: string
+  /** Retry refusals on a fallback model (server-side fallback). Default on, except for Haiku models (not supported). */
+  fallbacks?: boolean
   /** What your site is about, tone, terms not to translate… */
   instructions?: string
   /** Name a locale code for the model, e.g. `de` → `German (Deutsch)`. */
@@ -56,12 +58,13 @@ export type ClaudeTranslatorOptions = {
   effort?: 'low' | 'medium' | 'high'
 }
 
-/** Translation with Claude: structured output, placeholder checks, server-side fallback on refusals, and the Batch API for sweeps. */
+/** Translation with Claude (Haiku by default): structured output, placeholder checks, editors' notes and glossary, server-side fallback on refusals where supported, and the Batch API for sweeps. */
 export function claudeTranslator(options: ClaudeTranslatorOptions = {}): Translator {
   const client = () => options.client ?? new Anthropic()
-  const model = options.model ?? 'claude-opus-5-5'
+  const model = options.model ?? 'claude-haiku-5-5'
+  const fallbacks = options.fallbacks ?? !model.includes('haiku')
   const system = [options.instructions?.trim(), RULES].filter(Boolean).join('\n\n')
-  const params = ({ locale, items, context, keep, sourceLocale }: TranslateArgs): Anthropic.MessageCreateParamsNonStreaming => ({
+  const params = ({ locale, items, context, keep, sourceLocale, instructions, glossary }: TranslateArgs): Anthropic.MessageCreateParamsNonStreaming => ({
     model,
     max_tokens: 32000,
     output_config: { effort: options.effort ?? 'low', format: { type: 'json_schema', schema: SCHEMA as never } },
@@ -69,16 +72,20 @@ export function claudeTranslator(options: ClaudeTranslatorOptions = {}): Transla
     messages: [
       {
         role: 'user',
-        content: `Source language: ${options.languageName?.(sourceLocale) ?? sourceLocale}. Target language: ${options.languageName?.(locale) ?? locale}.${context ? `\nContext: ${context}` : ''}${keep.length ? `\nNever translate these terms: ${keep.join(', ')}` : ''}\n\nItems (JSON):\n${JSON.stringify({ items })}`,
+        content: `Source language: ${options.languageName?.(sourceLocale) ?? sourceLocale}. Target language: ${options.languageName?.(locale) ?? locale}.${context ? `\nContext: ${context}` : ''}${keep.length ? `\nNever translate these terms: ${keep.join(', ')}` : ''}${instructions ? `\nNotes from the site's editors: ${instructions}` : ''}${glossary?.length ? `\nUse these translations: ${glossary.map((g) => `${g.term} → ${g.translation}`).join('; ')}` : ''}\n\nItems (JSON):\n${JSON.stringify({ items })}`,
       },
     ],
   })
   return {
     async translate(args) {
       if (!args.items.length) return new Map()
-      const m = (await client()
-        .beta.messages.stream({ ...params(args), betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as never)
-        .finalMessage()) as unknown as Anthropic.Message
+      const m = (
+        fallbacks
+          ? await client()
+              .beta.messages.stream({ ...params(args), betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as never)
+              .finalMessage()
+          : await client().messages.stream(params(args)).finalMessage()
+      ) as unknown as Anthropic.Message
       if (m.stop_reason !== 'end_turn') return new Map()
       return acceptTranslations(args.items, textOf(m))
     },

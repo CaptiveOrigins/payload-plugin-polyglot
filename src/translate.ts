@@ -1,6 +1,7 @@
 import type { CollectionSlug, Payload } from 'payload'
 
 import { fingerprint, memoryKey, textsOf, visitPaths, type Json } from './text.js'
+import { loadSettings, recordUsage, type Settings } from './settings.js'
 import { QuotaExceededError, type DocumentResult, type Item, type ResolvedPolyglot, type TranslateArgs } from './types.js'
 
 type StateRow = { id: string; key: string; locale: string; hash: string; stale?: boolean | null }
@@ -79,13 +80,16 @@ async function remember(payload: Payload, o: ResolvedPolyglot, locale: string, p
 
 const CHUNK = 80
 const chunks = <T>(list: T[]) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK))
-const argsFor = (o: ResolvedPolyglot, locale: string, items: Item[], context?: string): TranslateArgs => ({
+const argsFor = (o: ResolvedPolyglot, s: Settings, locale: string, items: Item[], context?: string): TranslateArgs => ({
   locale,
   items,
   context,
   sourceLocale: o.defaultLocale,
-  keep: o.keep,
+  keep: [...new Set([...o.keep, ...s.keep])],
+  instructions: s.instructions,
+  glossary: s.glossary.filter((g) => g.locale === locale).map(({ term, translation }) => ({ term, translation })),
 })
+const localesOf = (o: ResolvedPolyglot, s: Settings, wanted?: string[]) => (wanted ?? o.locales).filter((l) => !s.skipLocales.has(l))
 
 /** A per-run character budget (free tiers). */
 export class Budget {
@@ -109,14 +113,15 @@ export async function translateDocument(
   payload: Payload,
   collection: string,
   id: string,
-  opts: { locales?: string[]; dryRun?: boolean; memoryOnly?: boolean; inRequest?: boolean; budget?: Budget } = {},
+  opts: { locales?: string[]; dryRun?: boolean; memoryOnly?: boolean; inRequest?: boolean; budget?: Budget; settings?: Settings } = {},
 ): Promise<DocumentResult> {
   const o = polyglotOf(payload)
+  const settings = opts.settings ?? (await loadSettings(payload, o))
   const result: DocumentResult = { translated: [], upToDate: [], reviewedStale: [], failed: [], pending: [] }
   const src = await loadSource(payload, o, collection, id)
   if (!src) return result
   const todo: string[] = []
-  for (const locale of opts.locales ?? o.locales) {
+  for (const locale of localesOf(o, settings, opts.locales)) {
     const row = src.state.get(locale)
     if (row?.hash === src.hash) result.upToDate.push(locale)
     else if (src.reviewed.has(locale)) {
@@ -127,48 +132,55 @@ export async function translateDocument(
   if (opts.dryRun) return { ...result, pending: todo }
   const unique = [...new Set(src.texts)]
   const context = { ...(o.writeContext?.({ inRequest: Boolean(opts.inRequest) }) ?? {}), polyglot: true }
-  for (const [n, locale] of todo.entries()) {
-    try {
-      let known = await recall(payload, o, locale, unique)
-      const missing = unique.filter((t) => !known.has(t))
-      if (missing.length && !opts.memoryOnly) {
-        const chars = missing.reduce((s, t) => s + t.length, 0)
-        if (opts.budget && !opts.budget.allows(chars)) {
+  let sent = 0
+  try {
+    for (const [n, locale] of todo.entries()) {
+      try {
+        let known = await recall(payload, o, locale, unique)
+        const missing = unique.filter((t) => !known.has(t))
+        if (missing.length && !opts.memoryOnly) {
+          const chars = missing.reduce((s, t) => s + t.length, 0)
+          if (opts.budget && !opts.budget.allows(chars)) {
+            result.pending.push(...todo.slice(n))
+            break
+          }
+          for (const part of chunks(missing)) {
+            const items = part.map((text, i) => ({ key: String(i), text }))
+            const out = await engineFor(o, locale).translate(argsFor(o, settings, locale, items, o.describe?.(collection)))
+            const chars = part.reduce((s, t) => s + t.length, 0)
+            opts.budget?.spend(chars)
+            sent += chars
+            await remember(payload, o, locale, items.flatMap((it) => (out.get(it.key) ? [[it.text, out.get(it.key)!] as [string, string]] : [])))
+          }
+          known = await recall(payload, o, locale, unique)
+        }
+        if (unique.some((t) => !known.has(t))) {
+          ;(opts.memoryOnly ? result.pending : result.failed).push(locale)
+          continue
+        }
+        const data = structuredClone(src.source)
+        visitPaths(data, o.collections[collection]!, rulesOf(o), (t, set) => set(known.get(t) ?? t))
+        await payload.update({
+          collection: collection as CollectionSlug,
+          id,
+          locale: locale as never,
+          data: { ...data, ...(src.doc._status ? { _status: 'published' } : {}) } as never,
+          overrideAccess: true,
+          context,
+        })
+        await saveState(payload, o, collection, id, locale, src.hash, false, src.state.get(locale))
+        result.translated.push(locale)
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
           result.pending.push(...todo.slice(n))
-          break
+          throw Object.assign(error, { result })
         }
-        for (const part of chunks(missing)) {
-          const items = part.map((text, i) => ({ key: String(i), text }))
-          const out = await engineFor(o, locale).translate(argsFor(o, locale, items, o.describe?.(collection)))
-          opts.budget?.spend(part.reduce((s, t) => s + t.length, 0))
-          await remember(payload, o, locale, items.flatMap((it) => (out.get(it.key) ? [[it.text, out.get(it.key)!] as [string, string]] : [])))
-        }
-        known = await recall(payload, o, locale, unique)
+        payload.logger.error({ err: error, collection, id, locale }, 'Polyglot: translation failed')
+        result.failed.push(locale)
       }
-      if (unique.some((t) => !known.has(t))) {
-        ;(opts.memoryOnly ? result.pending : result.failed).push(locale)
-        continue
-      }
-      const data = structuredClone(src.source)
-      visitPaths(data, o.collections[collection]!, rulesOf(o), (t, set) => set(known.get(t) ?? t))
-      await payload.update({
-        collection: collection as CollectionSlug,
-        id,
-        locale: locale as never,
-        data: { ...data, ...(src.doc._status ? { _status: 'published' } : {}) } as never,
-        overrideAccess: true,
-        context,
-      })
-      await saveState(payload, o, collection, id, locale, src.hash, false, src.state.get(locale))
-      result.translated.push(locale)
-    } catch (error) {
-      if (error instanceof QuotaExceededError) {
-        result.pending.push(...todo.slice(n))
-        throw Object.assign(error, { result })
-      }
-      payload.logger.error({ err: error, collection, id, locale }, 'Polyglot: translation failed')
-      result.failed.push(locale)
     }
+  } finally {
+    await recordUsage(payload, o, sent).catch((err) => payload.logger.warn({ err }, 'Polyglot: could not record usage'))
   }
   return result
 }
@@ -181,7 +193,7 @@ export type SyncReport = {
   reviewedStale: number
   failed: number
   characters: number
-  stopped: 'done' | 'budget' | 'quota'
+  stopped: 'done' | 'budget' | 'quota' | 'paused'
 }
 
 /**
@@ -189,21 +201,25 @@ export type SyncReport = {
  * has `batch` and `useBatch`, every missing sentence of every language goes in
  * one batch first (cheaper), then documents are written from memory. Stops
  * cleanly at `maxCharactersPerRun` or when the engine's quota is used up; the
- * next run continues. `dryRun` only reports what is pending.
+ * next run continues. `dryRun` only reports what is pending. Respects the
+ * Translation settings (paused, skipped languages, cap); `force` runs even when
+ * paused (Translate now).
  */
 export async function syncAll(
   payload: Payload,
-  opts: { dryRun?: boolean; useBatch?: boolean; limit?: number; collections?: string[]; locales?: string[] } = {},
+  opts: { dryRun?: boolean; useBatch?: boolean; limit?: number; collections?: string[]; locales?: string[]; force?: boolean } = {},
 ): Promise<SyncReport> {
   const o = polyglotOf(payload)
   const report: SyncReport = { documents: 0, upToDate: 0, translated: 0, pending: 0, reviewedStale: 0, failed: 0, characters: 0, stopped: 'done' }
-  const budget = new Budget(o.maxCharactersPerRun)
+  const settings = await loadSettings(payload, o)
+  if (settings.paused && !opts.force && !opts.dryRun) return { ...report, stopped: 'paused' }
+  const budget = new Budget(settings.maxCharactersPerRun ?? o.maxCharactersPerRun)
   const targets: { collection: string; id: string }[] = []
   for (const collection of Object.keys(o.collections).filter((c) => !opts.collections || opts.collections.includes(c))) {
     const { docs } = await payload.find({ collection: collection as CollectionSlug, locale: o.defaultLocale as never, depth: 0, pagination: false, overrideAccess: true, draft: false })
     for (const d of docs as Record<string, unknown>[]) if (included(o, collection, d)) targets.push({ collection, id: String(d.id) })
   }
-  const locales = opts.locales ?? o.locales
+  const locales = localesOf(o, settings, opts.locales)
   const work = opts.limit ? targets.slice(0, opts.limit) : targets
   const batching = Boolean(opts.useBatch && o.translator.batch && !o.translatorFor && !opts.dryRun)
 
@@ -229,11 +245,12 @@ export async function syncAll(
           break
         }
         budget.spend(chars)
-        requests.push(argsFor(o, locale, part.map((text, i) => ({ key: String(i), text }))))
+        requests.push(argsFor(o, settings, locale, part.map((text, i) => ({ key: String(i), text }))))
       }
     }
     if (requests.length) {
       const results = await o.translator.batch!(requests)
+      await recordUsage(payload, o, budget.used)
       for (const [i, r] of requests.entries())
         await remember(payload, o, r.locale, r.items.flatMap((it) => (results[i]?.get(it.key) ? [[it.text, results[i]!.get(it.key)!] as [string, string]] : [])))
     }
@@ -241,7 +258,7 @@ export async function syncAll(
   for (const t of work) {
     let r: DocumentResult
     try {
-      r = await translateDocument(payload, t.collection, t.id, { locales, dryRun: opts.dryRun, memoryOnly: batching, budget: batching ? undefined : budget })
+      r = await translateDocument(payload, t.collection, t.id, { locales, dryRun: opts.dryRun, memoryOnly: batching, budget: batching ? undefined : budget, settings })
     } catch (error) {
       if (!(error instanceof QuotaExceededError)) throw error
       r = (error as QuotaExceededError & { result: DocumentResult }).result

@@ -1,6 +1,6 @@
 {
   "name": "@captiveorigins/payload-plugin-polyglot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keeps all your Payload content translated into every language you have, a little at a time: finds content on its own, translates on publish and in a sweep, remembers every sentence, skips placeholder text, and never overwrites a human-reviewed translation.",
   "keywords": [
     "payload",

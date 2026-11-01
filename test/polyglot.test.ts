@@ -3,17 +3,17 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { buildConfig, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { coverage, languageStatus, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
+import { coverage, languageStatus, loadSettings, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
 
 let payload: Payload
 let mongo: MongoMemoryReplSet
-const sent: { locale: string; texts: string[]; keep?: string[] }[] = []
+const sent: { locale: string; texts: string[]; keep?: string[]; instructions?: string; glossary?: { term: string; translation: string }[] }[] = []
 let quotaAfter = Infinity
 const fake = (locale: string, text: string) => `[${locale}] ${text}`
 const translator: Translator = {
-  translate: async ({ locale, items, keep }) => {
+  translate: async ({ locale, items, keep, instructions, glossary }) => {
     if (sent.length >= quotaAfter) throw new QuotaExceededError()
-    sent.push({ locale, texts: items.map((i) => i.text), keep })
+    sent.push({ locale, texts: items.map((i) => i.text), keep, instructions, glossary })
     return new Map(items.map((i: Item) => [i.key, fake(locale, i.text)]))
   },
   batch: async (requests) => {
@@ -95,7 +95,7 @@ describe('polyglot', () => {
       data: {
         title: 'Hello world',
         slug: 'hello-world',
-        body: lexical('First sentence.', 'Lorem ipsum dolor sit amet.'),
+        body: lexical('First sentence.', 'Lorem ipsum dolor sit amet.', 'Ut enim ad minim veniam, quis nostrud exercitation.'),
         links: [{ label: 'Read more', url: 'https://example.com/more' }],
         sections: [{ heading: 'Intro', note: 'shared note' }],
         _status: 'published',
@@ -112,6 +112,7 @@ describe('polyglot', () => {
     expect(es.links[0]).toMatchObject({ label: '[es] Read more', url: 'https://example.com/more' })
     expect(es.sections[0]).toMatchObject({ heading: '[es] Intro', note: 'shared note' })
     expect(sent.flatMap((s) => s.texts)).not.toContain('Lorem ipsum dolor sit amet.')
+    expect(sent.flatMap((s) => s.texts)).not.toContain('Ut enim ad minim veniam, quis nostrud exercitation.')
     expect(sent[0]!.keep).toEqual(['OnePedigree'])
     expect(await languageStatus(payload, 'pages', { id }, 'es')).toBe('machine')
   })
@@ -169,5 +170,23 @@ describe('polyglot', () => {
     quotaAfter = Infinity
     expect(await syncAll(payload)).toMatchObject({ stopped: 'done', failed: 0 })
     expect(await syncAll(payload, { dryRun: true })).toMatchObject({ pending: 0 })
+  })
+
+  it('follows the Translation settings: pause, skipped languages, terms, notes, glossary, usage', async () => {
+    const o = payload.config.custom.polyglot
+    await payload.updateGlobal({
+      slug: 'polyglot-settings' as never,
+      data: { paused: true, skipLocales: ['fr'], keep: 'Captive Origins\n', instructions: 'Be formal.', glossary: [{ locale: 'es', term: 'keeper', translation: 'cuidador' }] } as never,
+    })
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Settings page', _status: 'published' } as never })
+    expect(await syncAll(payload)).toMatchObject({ stopped: 'paused', translated: 0 })
+    sent.length = 0
+    const r = await syncAll(payload, { force: true })
+    expect(r.stopped).toBe('done')
+    expect(sent.map((x) => x.locale)).toEqual(['es'])
+    expect(sent[0]).toMatchObject({ keep: ['OnePedigree', 'Captive Origins'], instructions: 'Be formal.', glossary: [{ term: 'keeper', translation: 'cuidador' }] })
+    expect(await languageStatus(payload, 'pages', { id: page.id }, 'fr')).toBe('pending')
+    const s = await loadSettings(payload, o)
+    expect(s.usage.at(-1)!.characters).toBeGreaterThan(0)
   })
 })

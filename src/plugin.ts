@@ -2,6 +2,7 @@ import type { CollectionAfterChangeHook, CollectionBeforeChangeHook, CollectionC
 
 import { FILLER, SKIP_KEYS } from './text.js'
 import { coverageEndpoint, syncEndpoint } from './endpoints.js'
+import { loadSettings, settingsGlobal } from './settings.js'
 import { included, translateDocument } from './translate.js'
 import type { PolyglotOptions, ResolvedPolyglot } from './types.js'
 
@@ -73,6 +74,8 @@ const memoryCollection = (slug: string): CollectionConfig => ({
  * - Placeholder copy (lorem ipsum) is never sent; languages marked "Reviewed by a
  *   human" are never overwritten (they are flagged when the source changes).
  * - Identity fields (slug, path…) never change when another language is saved.
+ * - Translation settings (a global) let admins pause translation, skip languages,
+ *   add never-translate terms, notes and a glossary, and see characters sent.
  */
 export const polyglotPlugin =
   (options: PolyglotOptions): Plugin =>
@@ -98,6 +101,10 @@ export const polyglotPlugin =
       describe: options.describe,
       onPublish: options.onPublish ?? true,
       canManage: options.canManage,
+      canConfigure: options.canConfigure,
+      settings: options.settings ?? true,
+      settingsSlug: options.settingsSlug ?? 'polyglot-settings',
+      settingsGroup: options.settingsGroup ?? 'Settings',
       adminView: options.adminView ?? true,
       defaultLocale: loc.defaultLocale,
       locales: codes.filter((c) => c !== loc.defaultLocale),
@@ -115,6 +122,7 @@ export const polyglotPlugin =
       if (!resolved.onPublish || context?.polyglot || (req.locale && req.locale !== resolved.defaultLocale)) return doc
       if (!included(resolved, collection.slug, doc)) return doc
       if (resolved.enabled && !(await resolved.enabled({ payload: req.payload, req }))) return doc
+      if ((await loadSettings(req.payload, resolved)).paused) return doc
       const run = () => translateDocument(req.payload, collection.slug, String(doc.id), { inRequest: true }).catch((err) => req.payload.logger.error({ err }, 'Polyglot: publish translation failed'))
       try {
         const { after } = await import('next/server.js')
@@ -145,6 +153,7 @@ export const polyglotPlugin =
       ...config,
       custom: { ...config.custom, polyglot: resolved },
       endpoints: [...(config.endpoints ?? []), coverageEndpoint, syncEndpoint],
+      globals: resolved.settings && !(config.globals ?? []).some((g) => g.slug === resolved.settingsSlug) ? [...(config.globals ?? []), settingsGlobal(resolved, labels)] : config.globals,
       admin: resolved.adminView
         ? {
             ...config.admin,

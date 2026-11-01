@@ -1,7 +1,9 @@
 import crypto from 'node:crypto'
 
-/** Default placeholder copy that is never translated (nor paid for). */
-export const FILLER = /lorem ipsum|dolor sit amet|consectetur adipiscing|sed do eiusmod|ut labore et dolore/i
+const LOREM_WORDS = 'lorem|ipsum|dolor|amet|consectetur|adipiscing|eiusmod|tempor|incididunt|labore|dolore|aliqua|veniam|nostrud|exercitation|ullamco|laboris|aliquip|commodo|consequat|reprehenderit|voluptate|cillum|fugiat|pariatur|excepteur|occaecat|cupidatat|proident|culpa|officia|deserunt|mollit'
+
+/** Default placeholder copy that is never translated (nor paid for): any text with three or more lorem ipsum words, wherever it starts. */
+export const FILLER = new RegExp(`(?:\\b(?:${LOREM_WORDS})\\b[\\s\\S]*?){3}`, 'i')
 
 /** Keys whose string values are never visible text. */
 export const SKIP_KEYS = [
