@@ -1,0 +1,74 @@
+{
+  "name": "@captiveorigins/payload-plugin-polyglot",
+  "version": "0.1.0",
+  "description": "Keeps all your Payload content translated into every language you have, a little at a time: finds content on its own, translates on publish and in a sweep, remembers every sentence, skips placeholder text, and never overwrites a human-reviewed translation.",
+  "keywords": [
+    "payload",
+    "payload-plugin",
+    "payloadcms",
+    "i18n",
+    "localization",
+    "translation",
+    "machine-translation",
+    "claude"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mgilardi/payload-plugin-polyglot.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./claude": {
+      "types": "./dist/claude.d.ts",
+      "import": "./dist/claude.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.9"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=1.0.0",
+    "next": ">=15",
+    "payload": "^3.80.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "@payloadcms/db-mongodb": "3.92.1",
+    "@types/node": "^24.0.0",
+    "graphql": "^16.14.2",
+    "mongodb-memory-server": "^11.3.0",
+    "next": "16.3.3",
+    "payload": "3.92.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

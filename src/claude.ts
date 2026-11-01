@@ -1,0 +1,105 @@
+import Anthropic from '@anthropic-ai/sdk'
+
+import type { Item, TranslateArgs, Translator } from './types.js'
+
+/** Response shape: the same keys, translated (structured output keeps it parseable). */
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: { type: 'object', properties: { key: { type: 'string' }, text: { type: 'string' } }, required: ['key', 'text'], additionalProperties: false },
+    },
+  },
+  required: ['items'],
+  additionalProperties: false,
+} as const
+
+const RULES = `Rules:
+- Translate every item's "text" into the target language; return every key exactly once, unchanged.
+- Keep placeholders such as {count} or {name} exactly as written, and keep HTML tags and Markdown.
+- Never translate product names, scientific names, codes or URLs.
+- Use the forms of address and punctuation natural for websites in that language.
+- Keep it concise: interface text should fit where the source fits.`
+
+const placeholders = (s: string) => [...s.matchAll(/\{[a-zA-Z0-9_]+\}/g)].map((m) => m[0]).sort().join(',')
+
+/** Keeps translations whose key was asked for and whose placeholders match the source. */
+export function acceptTranslations(source: Item[], raw: string) {
+  const asked = new Map(source.map((i) => [i.key, i.text]))
+  const accepted = new Map<string, string>()
+  let parsed: { items?: Item[] }
+  try {
+    parsed = JSON.parse(raw) as { items?: Item[] }
+  } catch {
+    return accepted
+  }
+  for (const it of parsed.items ?? []) {
+    const src = asked.get(it.key)
+    if (src !== undefined && typeof it.text === 'string' && it.text.trim() && placeholders(src) === placeholders(it.text)) accepted.set(it.key, it.text)
+  }
+  return accepted
+}
+
+const textOf = (m: Anthropic.Message) => m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('')
+
+export type ClaudeTranslatorOptions = {
+  /** An Anthropic client; default `new Anthropic()` (reads ANTHROPIC_API_KEY). */
+  client?: Anthropic
+  /** Default `claude-opus-5-5`. */
+  model?: string
+  /** What your site is about, tone, terms not to translate… */
+  instructions?: string
+  /** Name a locale code for the model, e.g. `de` → `German (Deutsch)`. */
+  languageName?: (locale: string) => string
+  /** Thinking effort. Default `low` (translation rarely needs more). */
+  effort?: 'low' | 'medium' | 'high'
+}
+
+/** Translation with Claude: structured output, placeholder checks, server-side fallback on refusals, and the Batch API for sweeps. */
+export function claudeTranslator(options: ClaudeTranslatorOptions = {}): Translator {
+  const client = () => options.client ?? new Anthropic()
+  const model = options.model ?? 'claude-opus-5-5'
+  const system = [options.instructions?.trim(), RULES].filter(Boolean).join('\n\n')
+  const params = ({ locale, items, context, keep, sourceLocale }: TranslateArgs): Anthropic.MessageCreateParamsNonStreaming => ({
+    model,
+    max_tokens: 32000,
+    output_config: { effort: options.effort ?? 'low', format: { type: 'json_schema', schema: SCHEMA as never } },
+    system,
+    messages: [
+      {
+        role: 'user',
+        content: `Source language: ${options.languageName?.(sourceLocale) ?? sourceLocale}. Target language: ${options.languageName?.(locale) ?? locale}.${context ? `\nContext: ${context}` : ''}${keep.length ? `\nNever translate these terms: ${keep.join(', ')}` : ''}\n\nItems (JSON):\n${JSON.stringify({ items })}`,
+      },
+    ],
+  })
+  return {
+    async translate(args) {
+      if (!args.items.length) return new Map()
+      const m = (await client()
+        .beta.messages.stream({ ...params(args), betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as never)
+        .finalMessage()) as unknown as Anthropic.Message
+      if (m.stop_reason !== 'end_turn') return new Map()
+      return acceptTranslations(args.items, textOf(m))
+    },
+    async batch(requests) {
+      if (!requests.length) return []
+      const c = client()
+      const created = await c.messages.batches.create({
+        requests: requests.map((r, i) => ({ custom_id: `r${i}`, params: params(r) })),
+      })
+      for (;;) {
+        const b = await c.messages.batches.retrieve(created.id)
+        if (b.processing_status === 'ended') break
+        await new Promise((res) => setTimeout(res, 30_000))
+      }
+      const out: Map<string, string>[] = requests.map(() => new Map())
+      for await (const result of await c.messages.batches.results(created.id)) {
+        const i = Number(result.custom_id.slice(1))
+        if (result.result.type === 'succeeded' && result.result.message.stop_reason === 'end_turn')
+          out[i] = acceptTranslations(requests[i]!.items, textOf(result.result.message))
+      }
+      return out
+    },
+  }
+}
