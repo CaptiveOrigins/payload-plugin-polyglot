@@ -9,9 +9,12 @@ let payload: Payload
 let mongo: MongoMemoryReplSet
 const sent: { locale: string; texts: string[]; keep?: string[]; instructions?: string; glossary?: { term: string; translation: string }[] }[] = []
 let quotaAfter = Infinity
+let stopWith: QuotaExceededError | undefined
+const stops: string[] = []
 const fake = (locale: string, text: string) => `[${locale}] ${text}`
 const translator: Translator = {
   translate: async ({ locale, items, keep, instructions, glossary }) => {
+    if (stopWith) throw stopWith
     if (sent.length >= quotaAfter) throw new QuotaExceededError()
     sent.push({ locale, texts: items.map((i) => i.text), keep, instructions, glossary })
     return new Map(items.map((i: Item) => [i.key, fake(locale, i.text)]))
@@ -51,7 +54,7 @@ beforeAll(async () => {
           ],
         },
       ],
-      plugins: [polyglotPlugin({ collections: { pages: ['title', 'body', 'links', 'sections.heading'] }, translator, keep: ['OnePedigree'] })],
+      plugins: [polyglotPlugin({ collections: { pages: ['title', 'body', 'links', 'sections.heading'] }, translator, keep: ['OnePedigree'], onStop: ({ stop }) => void stops.push(stop.reason) })],
     }),
   })
 }, 120_000)
@@ -170,6 +173,20 @@ describe('polyglot', () => {
     quotaAfter = Infinity
     expect(await syncAll(payload)).toMatchObject({ stopped: 'done', failed: 0 })
     expect(await syncAll(payload, { dryRun: true })).toMatchObject({ pending: 0 })
+  })
+
+  it('tells admins once when credits run out, and clears when translation works again', async () => {
+    const o = payload.config.custom.polyglot
+    stops.length = 0
+    await payload.create({ collection: 'pages' as never, data: { title: 'Credits page', _status: 'published' } as never })
+    stopWith = new QuotaExceededError('Claude: Your credit balance is too low', 'credits')
+    expect(await syncAll(payload)).toMatchObject({ stopped: 'quota', stopReason: 'credits' })
+    await syncAll(payload)
+    expect(stops).toEqual(['credits'])
+    expect((await loadSettings(payload, o)).stop).toMatchObject({ reason: 'credits', message: 'Claude: Your credit balance is too low' })
+    stopWith = undefined
+    expect(await syncAll(payload)).toMatchObject({ stopped: 'done', failed: 0 })
+    expect((await loadSettings(payload, o)).stop).toBeUndefined()
   })
 
   it('follows the Translation settings: pause, skipped languages, terms, notes, glossary, usage', async () => {

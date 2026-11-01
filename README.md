@@ -27,6 +27,10 @@ have, a little at a time.
   glossary of preferred translations per language, a per-sweep character cap, and characters
   sent per month. The Translations view shows coverage per collection and language, with
   Translate now.
+- **Tells admins when it stops.** Out of credits, a free quota used up or a refused key stops
+  translation cleanly (nothing is lost) and shows why on the admin dashboard, as ⚠ next to
+  Translations in the menu, and on the Translations view; `onStop` runs once (e.g. to email
+  admins) and everything clears with the next successful translation.
 - **Engine per language** (`translatorFor`), e.g. one engine for European languages and another
   for the rest.
 
@@ -101,6 +105,7 @@ Show visitors what they are reading: `languageStatus(payload, collection, doc, l
 | `statusField` | `translations` | Per-document "Reviewed by a human" languages |
 | `writeContext` | | Context for writes (e.g. `{ disableRevalidate: true }` in scripts) |
 | `onPublish` | `true` | Translate after publishing |
+| `onStop` | | Called once when translation stops (`{ payload, stop: { reason, message, at } }`), e.g. to email admins |
 | `canManage` | signed-in users | Who sees the Translations view and can Translate now |
 | `canConfigure` | `canManage` | Who may change Translation settings |
 | `settings` | `true` | Add the Translation settings global (`settingsSlug` `polyglot-settings`, `settingsGroup` `Settings`) |

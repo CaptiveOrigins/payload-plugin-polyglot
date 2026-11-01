@@ -61,7 +61,8 @@ export function microsoftTranslator(options: MicrosoftTranslatorOptions): Transl
             await new Promise((r) => setTimeout(r, Number(res.headers.get('retry-after') ?? 2 ** attempt * 5) * 1000))
             continue
           }
-          if (res.status === 403) throw new QuotaExceededError(`Microsoft Translator: ${await res.text()}`)
+          if (res.status === 401) throw new QuotaExceededError(`Microsoft Translator refused the key: ${await res.text()}`, 'auth')
+          if (res.status === 403) throw new QuotaExceededError(`Microsoft Translator quota used up: ${await res.text()}`, 'quota')
           if (!res.ok) throw new Error(`Microsoft Translator ${res.status}: ${await res.text()}`)
           const body = (await res.json()) as { translations: { text: string }[] }[]
           group.forEach((it, i) => {

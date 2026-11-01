@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { claudeTranslator } from '../src/claude.js'
+import { claudeTranslator, stopReasonOf } from '../src/claude.js'
 
 describe('claude translator', () => {
   it('uses Haiku without fallbacks, and passes notes and glossary', async () => {
@@ -26,5 +26,13 @@ describe('claude translator', () => {
     expect([...out]).toEqual([['0', 'Hola {name}']])
     await claudeTranslator({ client: client as never, model: 'claude-opus-5-5' }).translate({ locale: 'es', sourceLocale: 'en', keep: [], items: [{ key: '0', text: 'Hello {name}' }] })
     expect(calls[1]!.kind).toBe('beta')
+  })
+
+  it('recognizes errors that need someone to act', () => {
+    expect(stopReasonOf(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.')).toBe('credits')
+    expect(stopReasonOf(402, 'billing_error', 'x')).toBe('credits')
+    expect(stopReasonOf(401, 'authentication_error', 'invalid x-api-key')).toBe('auth')
+    expect(stopReasonOf(529, 'overloaded_error', 'Overloaded')).toBeUndefined()
+    expect(stopReasonOf(400, 'invalid_request_error', 'max_tokens too large')).toBeUndefined()
   })
 })

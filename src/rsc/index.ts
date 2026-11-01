@@ -1,1 +1,1 @@
-export { PolyglotNavLink, PolyglotView } from './PolyglotView.js'
+export { PolyglotNavLink, PolyglotStopBanner, PolyglotView } from './PolyglotView.js'

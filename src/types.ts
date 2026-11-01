@@ -24,13 +24,26 @@ export type Translator = {
   batch?: (requests: TranslateArgs[]) => Promise<Map<string, string>[]>
 }
 
-/** Thrown by a translator when its quota (e.g. a free tier) is used up: the run stops and resumes next time. */
+/** Why an engine stopped: out of credits (paid), a free quota used up, or the key refused. */
+export type StopReason = 'credits' | 'quota' | 'auth'
+
+/**
+ * Thrown by a translator when it cannot continue until someone acts (credits,
+ * quota, key): the run stops cleanly, admins are told why, and the next run
+ * after the fix continues.
+ */
 export class QuotaExceededError extends Error {
-  constructor(message = 'Translation quota used up') {
+  constructor(
+    message = 'Translation quota used up',
+    readonly reason: StopReason = 'quota',
+  ) {
     super(message)
     this.name = 'QuotaExceededError'
   }
 }
+
+/** A recorded stop, shown to admins until a translation succeeds again. */
+export type EngineStop = { reason: StopReason; message: string; at: string }
 
 export type PolyglotOptions = {
   /** Fields to keep in every language, per collection. Dotted paths reach into arrays/groups: `sections.heading`. */
@@ -76,9 +89,11 @@ export type PolyglotOptions = {
   adminView?: boolean
   /** Translate after a document is published (in Next.js, after the response). Default true. */
   onPublish?: boolean
+  /** Called once when translation stops (credits, quota, key), e.g. to email admins. Not called again until it has recovered. */
+  onStop?: (args: { payload: Payload; stop: EngineStop }) => void | Promise<void>
 }
 
-export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure'>> &
-  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure'> & { defaultLocale: string; locales: string[] }
+export type ResolvedPolyglot = Required<Omit<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure' | 'onStop'>> &
+  Pick<PolyglotOptions, 'enabled' | 'include' | 'writeContext' | 'describe' | 'translatorFor' | 'maxCharactersPerRun' | 'canManage' | 'canConfigure' | 'onStop'> & { defaultLocale: string; locales: string[] }
 
 export type DocumentResult = { translated: string[]; upToDate: string[]; reviewedStale: string[]; failed: string[]; pending: string[] }

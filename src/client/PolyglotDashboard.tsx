@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 
 type Counts = { translated: number; pending: number; reviewed: number; stale: number }
 type Row = { collection: string; documents: number; locales: Record<string, Counts> }
-type Status = { enabled: boolean; paused: boolean; skipped: string[]; charactersThisMonth: number; url: string | null }
+type Stop = { reason: string; message: string; at: string; help: string }
+type Status = { stop: Stop | null; enabled: boolean; paused: boolean; skipped: string[]; charactersThisMonth: number; url: string | null }
 
 /** Coverage per collection and language, filtered by collection, with Translate now. */
 export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute: string; collections: string[]; labels: Record<string, string> }) {
@@ -55,10 +56,16 @@ export function PolyglotDashboard({ apiRoute, collections, labels }: { apiRoute:
           Refresh
         </button>
       </div>
+      {data?.settings?.stop && (
+        <div role="alert" style={{ border: '1px solid var(--theme-error-500)', background: 'var(--theme-error-50)', color: 'var(--theme-error-800)', borderRadius: 4, padding: 'calc(var(--base) / 2) var(--base)' }}>
+          <strong>Translation stopped {new Date(data.settings.stop.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.</strong> {data.settings.stop.help}
+          <div style={{ fontSize: '0.85em', opacity: 0.8, marginTop: 4 }}>{data.settings.stop.message}</div>
+        </div>
+      )}
       {data?.settings && (
         <p style={{ margin: 0 }}>
           <strong>Automatic translation:</strong>{' '}
-          {!data.settings.enabled ? 'off here (no engine, or turned off for this environment)' : data.settings.paused ? 'paused' : 'on'}
+          {!data.settings.enabled ? 'off here (no engine, or turned off for this environment)' : data.settings.stop ? 'stopped (see above)' : data.settings.paused ? 'paused' : 'on'}
           {' · '}
           {data.settings.charactersThisMonth.toLocaleString()} characters sent this month
           {data.settings.skipped.length ? ` · not machine-translated: ${data.settings.skipped.join(', ')}` : ''}

@@ -1,6 +1,6 @@
 import type { GlobalConfig, Payload, PayloadRequest } from 'payload'
 
-import type { ResolvedPolyglot } from './types.js'
+import type { EngineStop, QuotaExceededError, ResolvedPolyglot } from './types.js'
 
 export type GlossaryEntry = { locale: string; term: string; translation: string }
 
@@ -13,6 +13,8 @@ export type Settings = {
   glossary: GlossaryEntry[]
   maxCharactersPerRun?: number
   usage: { month: string; characters: number }[]
+  /** Set while translation is stopped (credits, quota, key); cleared by the next success. */
+  stop?: EngineStop
 }
 
 const DEFAULTS: Settings = { paused: false, skipLocales: new Set(), keep: [], glossary: [], usage: [] }
@@ -78,6 +80,26 @@ export function settingsGlobal(o: ResolvedPolyglot, labels: { label: string; val
         admin: { description: `Stops a sweep after sending this many characters; the next run continues. Empty: ${o.maxCharactersPerRun ? `${o.maxCharactersPerRun.toLocaleString('en')} (set in code)` : 'no cap'}.` },
       },
       {
+        name: 'stop',
+        label: 'Stopped',
+        type: 'group',
+        admin: {
+          readOnly: true,
+          condition: (data) => Boolean(data?.stop?.reason),
+          description: 'Translation stopped and is waiting for someone to act. Cleared automatically by the next successful translation.',
+        },
+        fields: [
+          {
+            type: 'row',
+            fields: [
+              { name: 'reason', type: 'select', options: [{ label: 'Out of credits', value: 'credits' }, { label: 'Free quota used up', value: 'quota' }, { label: 'Key refused', value: 'auth' }] },
+              { name: 'at', type: 'date', admin: { date: { pickerAppearance: 'dayAndTime' } } },
+            ],
+          },
+          { name: 'message', type: 'textarea' },
+        ],
+      },
+      {
         name: 'usage',
         label: 'Characters sent, by month',
         type: 'array',
@@ -111,6 +133,7 @@ export async function loadSettings(payload: Payload, o: ResolvedPolyglot): Promi
     glossary: ((g.glossary as GlossaryEntry[] | null) ?? []).filter((e) => e.locale && e.term && e.translation),
     maxCharactersPerRun: typeof g.maxCharactersPerRun === 'number' ? g.maxCharactersPerRun : undefined,
     usage: ((g.usage as Settings['usage'] | null) ?? []).map(({ month, characters }) => ({ month, characters })),
+    stop: (g.stop as EngineStop | null)?.reason ? (g.stop as EngineStop) : undefined,
   }
 }
 
@@ -124,3 +147,28 @@ export async function recordUsage(payload: Payload, o: ResolvedPolyglot, charact
 }
 
 export const charactersThisMonth = (s: Settings) => s.usage.find((u) => u.month === month())?.characters ?? 0
+
+/** What admins should do about a stop. */
+export const STOP_HELP: Record<EngineStop['reason'], string> = {
+  credits: 'The translation engine’s account is out of credits (or hit its spending limit). Add credits, then click Translate now; nothing is lost meanwhile.',
+  quota: 'The engine’s free quota for this period is used up. Translation resumes on its own next period, or upgrade the plan.',
+  auth: 'The engine refused its key (missing, wrong or revoked). Update the key, then click Translate now.',
+}
+
+/** Records that translation stopped; calls `onStop` once (not again until it has recovered). */
+export async function recordStop(payload: Payload, o: ResolvedPolyglot, error: QuotaExceededError) {
+  const current = (await loadSettings(payload, o)).stop
+  const stop: EngineStop = { reason: error.reason, message: error.message.slice(0, 1000), at: new Date().toISOString() }
+  payload.logger.error({ reason: stop.reason, message: stop.message }, 'Polyglot: translation stopped')
+  if (current?.reason === stop.reason) return
+  if (hasGlobal(payload, o.settingsSlug))
+    await payload.updateGlobal({ slug: o.settingsSlug as never, data: { stop } as never, overrideAccess: true, context: { polyglot: true } })
+  await o.onStop?.({ payload, stop })
+}
+
+/** Clears a recorded stop after a successful translation. */
+export async function clearStop(payload: Payload, o: ResolvedPolyglot) {
+  if (!hasGlobal(payload, o.settingsSlug)) return
+  await payload.updateGlobal({ slug: o.settingsSlug as never, data: { stop: { reason: null, message: null, at: null } } as never, overrideAccess: true, context: { polyglot: true } })
+  payload.logger.info('Polyglot: translation running again')
+}

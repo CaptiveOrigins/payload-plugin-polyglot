@@ -76,6 +76,9 @@ const memoryCollection = (slug: string): CollectionConfig => ({
  * - Identity fields (slug, path…) never change when another language is saved.
  * - Translation settings (a global) let admins pause translation, skip languages,
  *   add never-translate terms, notes and a glossary, and see characters sent.
+ * - When the engine stops (out of credits, quota used up, key refused) admins
+ *   see why on the dashboard, the menu and the Translations view; `onStop`
+ *   runs once (e.g. email); everything clears on the next success.
  */
 export const polyglotPlugin =
   (options: PolyglotOptions): Plugin =>
@@ -102,6 +105,7 @@ export const polyglotPlugin =
       onPublish: options.onPublish ?? true,
       canManage: options.canManage,
       canConfigure: options.canConfigure,
+      onStop: options.onStop,
       settings: options.settings ?? true,
       settingsSlug: options.settingsSlug ?? 'polyglot-settings',
       settingsGroup: options.settingsGroup ?? 'Settings',
@@ -160,6 +164,7 @@ export const polyglotPlugin =
             components: {
               ...components,
               afterNavLinks: [...(components.afterNavLinks ?? []), '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotNavLink'],
+              beforeDashboard: [...(components.beforeDashboard ?? []), '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotStopBanner'],
               views: { ...components.views, polyglot: { Component: '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotView', path: '/polyglot' } },
             },
           }

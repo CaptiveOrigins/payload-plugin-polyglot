@@ -1,6 +1,6 @@
 import { APIError, addDataAndFileToRequest, type Endpoint, type PayloadRequest } from 'payload'
 
-import { charactersThisMonth, loadSettings } from './settings.js'
+import { charactersThisMonth, loadSettings, STOP_HELP } from './settings.js'
 import { coverage, polyglotOf, syncAll } from './translate.js'
 
 const allowed = async (req: PayloadRequest) => {
@@ -23,7 +23,14 @@ export const coverageEndpoint: Endpoint = {
     return Response.json({
       locales: o.locales,
       rows,
-      settings: { enabled, paused: s.paused, skipped: [...s.skipLocales], charactersThisMonth: charactersThisMonth(s), url: o.settings ? `${req.payload.config.routes.admin}/globals/${o.settingsSlug}` : null },
+      settings: {
+        stop: s.stop ? { ...s.stop, help: STOP_HELP[s.stop.reason] } : null,
+        enabled,
+        paused: s.paused,
+        skipped: [...s.skipLocales],
+        charactersThisMonth: charactersThisMonth(s),
+        url: o.settings ? `${req.payload.config.routes.admin}/globals/${o.settingsSlug}` : null,
+      },
     })
   },
 }

@@ -1,8 +1,8 @@
 import type { CollectionSlug, Payload } from 'payload'
 
 import { fingerprint, memoryKey, textsOf, visitPaths, type Json } from './text.js'
-import { loadSettings, recordUsage, type Settings } from './settings.js'
-import { QuotaExceededError, type DocumentResult, type Item, type ResolvedPolyglot, type TranslateArgs } from './types.js'
+import { clearStop, loadSettings, recordStop, recordUsage, type Settings } from './settings.js'
+import { QuotaExceededError, type DocumentResult, type Item, type ResolvedPolyglot, type StopReason, type TranslateArgs } from './types.js'
 
 type StateRow = { id: string; key: string; locale: string; hash: string; stale?: boolean | null }
 
@@ -133,6 +133,7 @@ export async function translateDocument(
   const unique = [...new Set(src.texts)]
   const context = { ...(o.writeContext?.({ inRequest: Boolean(opts.inRequest) }) ?? {}), polyglot: true }
   let sent = 0
+  let recovered = !settings.stop
   try {
     for (const [n, locale] of todo.entries()) {
       try {
@@ -150,6 +151,10 @@ export async function translateDocument(
             const chars = part.reduce((s, t) => s + t.length, 0)
             opts.budget?.spend(chars)
             sent += chars
+            if (!recovered && out.size) {
+              recovered = true
+              await clearStop(payload, o)
+            }
             await remember(payload, o, locale, items.flatMap((it) => (out.get(it.key) ? [[it.text, out.get(it.key)!] as [string, string]] : [])))
           }
           known = await recall(payload, o, locale, unique)
@@ -173,6 +178,7 @@ export async function translateDocument(
       } catch (error) {
         if (error instanceof QuotaExceededError) {
           result.pending.push(...todo.slice(n))
+          await recordStop(payload, o, error).catch((err) => payload.logger.warn({ err }, 'Polyglot: could not record the stop'))
           throw Object.assign(error, { result })
         }
         payload.logger.error({ err: error, collection, id, locale }, 'Polyglot: translation failed')
@@ -194,6 +200,8 @@ export type SyncReport = {
   failed: number
   characters: number
   stopped: 'done' | 'budget' | 'quota' | 'paused'
+  /** With `stopped: 'quota'`: credits, quota or auth (see Translation settings). */
+  stopReason?: StopReason
 }
 
 /**
@@ -249,8 +257,16 @@ export async function syncAll(
       }
     }
     if (requests.length) {
-      const results = await o.translator.batch!(requests)
+      let results: Map<string, string>[]
+      try {
+        results = await o.translator.batch!(requests)
+      } catch (error) {
+        if (!(error instanceof QuotaExceededError)) throw error
+        await recordStop(payload, o, error)
+        return { ...report, stopped: 'quota', stopReason: error.reason, pending: requests.length }
+      }
       await recordUsage(payload, o, budget.used)
+      if (settings.stop && results.some((m) => m.size)) await clearStop(payload, o)
       for (const [i, r] of requests.entries())
         await remember(payload, o, r.locale, r.items.flatMap((it) => (results[i]?.get(it.key) ? [[it.text, results[i]!.get(it.key)!] as [string, string]] : [])))
     }
@@ -263,6 +279,7 @@ export async function syncAll(
       if (!(error instanceof QuotaExceededError)) throw error
       r = (error as QuotaExceededError & { result: DocumentResult }).result
       report.stopped = 'quota'
+      report.stopReason = error.reason
     }
     report.documents++
     report.upToDate += r.upToDate.length
