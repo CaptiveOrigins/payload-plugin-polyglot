@@ -2,9 +2,9 @@
   "name": "@captiveorigins/payload-plugin-polyglot",
   "version": "0.2.0",
   "description": "Translation for Payload: keeps content in every language, a little at a time, translating on publish and in a sweep, remembering every sentence, and never overwriting a human-reviewed translation.",
-  "homepage": "https://github.com/mgilardi/payload-plugin-polyglot#readme",
+  "homepage": "https://github.com/CaptiveOrigins/payload-plugin-polyglot#readme",
   "bugs": {
-    "url": "https://github.com/mgilardi/payload-plugin-polyglot/issues"
+    "url": "https://github.com/CaptiveOrigins/payload-plugin-polyglot/issues"
   },
   "keywords": [
     "payload",
@@ -19,7 +19,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mgilardi/payload-plugin-polyglot.git"
+    "url": "git+https://github.com/CaptiveOrigins/payload-plugin-polyglot.git"
   },
   "type": "module",
   "exports": {
