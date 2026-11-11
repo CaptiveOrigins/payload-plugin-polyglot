@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { buildConfig, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { coverageEndpoint, syncEndpoint } from '../src/endpoints.js'
 import { coverage, languageStatus, loadSettings, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
 
 let payload: Payload
@@ -205,5 +206,79 @@ describe('polyglot', () => {
     expect(await languageStatus(payload, 'pages', { id: page.id }, 'fr')).toBe('pending')
     const s = await loadSettings(payload, o)
     expect(s.usage.at(-1)!.characters).toBeGreaterThan(0)
+  })
+})
+
+describe('access and data safety', () => {
+  const reset = () =>
+    payload.updateGlobal({ slug: 'polyglot-settings' as never, data: { paused: false, skipLocales: [], keep: '', instructions: '', glossary: [], maxCharactersPerRun: null } as never })
+
+  it('refuses the endpoints to signed-out people, people canManage refuses, and when turned off', async () => {
+    const status = (p: Promise<unknown>) => p.then(() => 200, (e: { status?: number }) => e.status)
+    expect(await status(coverageEndpoint.handler({ payload, user: null, searchParams: new URLSearchParams() } as never) as Promise<unknown>)).toBe(401)
+    expect(await status(syncEndpoint.handler({ payload, user: null } as never) as Promise<unknown>)).toBe(401)
+    const o = payload.config.custom.polyglot
+    const withOptions = (extra: object) => ({ config: { ...payload.config, custom: { polyglot: { ...o, ...extra } } } })
+    const user = { id: 'u1', collection: 'users' }
+    expect(await status(coverageEndpoint.handler({ payload: withOptions({ canManage: () => false }), user } as never) as Promise<unknown>)).toBe(403)
+    expect(await status(syncEndpoint.handler({ payload: withOptions({ canManage: () => false }), user } as never) as Promise<unknown>)).toBe(403)
+    expect(await status(syncEndpoint.handler({ payload: withOptions({ enabled: () => false }), user } as never) as Promise<unknown>)).toBe(400)
+  })
+
+  it('keeps memory and status hidden from signed-out people, and read-only for everyone', async () => {
+    for (const collection of ['polyglot-memory', 'polyglot-state']) {
+      await expect(payload.find({ collection: collection as never, overrideAccess: false })).rejects.toThrow()
+      await expect(
+        payload.create({ collection: collection as never, data: { key: 'x', locale: 'es', source: 'a', text: 'b', collection: 'pages', doc: '1', hash: 'h' } as never, overrideAccess: false, user: { id: 'u1', collection: 'users' } as never }),
+      ).rejects.toThrow()
+    }
+    await expect(payload.findGlobal({ slug: 'polyglot-settings' as never, overrideAccess: false })).rejects.toThrow()
+  })
+
+  it('never changes the slug when another language is saved', async () => {
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Identity', slug: 'identity', _status: 'published' } as never })
+    await payload.update({ collection: 'pages' as never, id: page.id, locale: 'es' as never, data: { title: 'Identidad', slug: 'identidad' } as never })
+    expect((await read(String(page.id), 'en')).slug).toBe('identity')
+  })
+
+  it('writes nothing for a language the engine only half translated, and tries again next run', async () => {
+    await reset()
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Half', sections: [{ heading: 'Part one' }], _status: 'published' } as never })
+    const id = String(page.id)
+    const real = translator.translate
+    translator.translate = async (a) => new Map([...(await real(a))].filter(([, t]) => !t.includes('Part one')))
+    const r = await translateDocument(payload, 'pages', id, { locales: ['es'] })
+    translator.translate = real
+    expect(r.failed).toEqual(['es'])
+    expect((await read(id, 'es')).title).toBe('Half') // the default language (fallback), not a partial translation
+    expect(await languageStatus(payload, 'pages', { id }, 'es')).toBe('pending')
+    expect((await translateDocument(payload, 'pages', id, { locales: ['es'] })).translated).toEqual(['es'])
+  })
+
+  it('records an engine error as a failure, not a stop', async () => {
+    await reset()
+    stops.length = 0
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Broken engine', _status: 'published' } as never })
+    const real = translator.translate
+    translator.translate = async () => {
+      throw new Error('network down')
+    }
+    const r = await translateDocument(payload, 'pages', String(page.id), { locales: ['es'] })
+    translator.translate = real
+    expect(r.failed).toEqual(['es'])
+    expect(stops).toEqual([])
+    expect((await loadSettings(payload, payload.config.custom.polyglot)).stop).toBeUndefined()
+  })
+
+  it('stops a sweep at the character cap from Translation settings', async () => {
+    await reset()
+    await syncAll(payload) // catch up first
+    await payload.create({ collection: 'pages' as never, data: { title: 'A title well over ten characters', _status: 'published' } as never })
+    await payload.updateGlobal({ slug: 'polyglot-settings' as never, data: { maxCharactersPerRun: 10 } as never })
+    sent.length = 0
+    const r = await syncAll(payload)
+    expect(r).toMatchObject({ stopped: 'budget', characters: 0 })
+    expect(sent).toHaveLength(0)
+    await reset()
   })
 })
