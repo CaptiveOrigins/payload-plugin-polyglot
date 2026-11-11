@@ -2,6 +2,7 @@ import { DefaultTemplate } from '@payloadcms/next/templates'
 import type { AdminViewServerProps, Payload, PayloadRequest } from 'payload'
 import React from 'react'
 
+import { mayManage } from '../access.js'
 import { PolyglotDashboard } from '../client/PolyglotDashboard.js'
 import { loadSettings, STOP_HELP } from '../settings.js'
 import { polyglotOf } from '../translate.js'
@@ -15,7 +16,7 @@ const labelOf = (payload: Payload, slug: string) => {
 export async function PolyglotView({ initPageResult, params, searchParams }: AdminViewServerProps) {
   const { req, permissions, visibleEntities, locale } = initPageResult
   const o = polyglotOf(req.payload)
-  const allowed = Boolean(req.user) && (await (o.canManage ?? (() => true))({ req }))
+  const allowed = await mayManage(o, req)
   const collections = Object.keys(o.collections)
   return (
     <DefaultTemplate i18n={req.i18n} locale={locale} params={params} payload={req.payload} permissions={permissions} req={req} searchParams={searchParams} user={req.user ?? undefined} visibleEntities={visibleEntities}>
@@ -35,14 +36,11 @@ export async function PolyglotView({ initPageResult, params, searchParams }: Adm
   )
 }
 
-const mayManage = async (payload: Payload, user: unknown) => {
-  const o = polyglotOf(payload)
-  return Boolean(user) && (await (o.canManage ?? (() => true))({ req: { user, payload } as unknown as PayloadRequest }))
-}
+const managerSignedIn = (payload: Payload, user: unknown) => mayManage(polyglotOf(payload), { user, payload } as unknown as PayloadRequest)
 
 /** Nav link, for people who may manage translations (⚠ while translation is stopped). */
 export async function PolyglotNavLink({ payload, user }: { payload: Payload; user?: unknown }) {
-  if (!(await mayManage(payload, user))) return null
+  if (!(await managerSignedIn(payload, user))) return null
   const { stop } = await loadSettings(payload, polyglotOf(payload))
   return (
     <a className="nav__link" href={`${payload.config.routes.admin}/polyglot`} style={{ display: 'block', marginTop: 'calc(var(--base) / 2)' }} title={stop ? 'Translation has stopped' : undefined}>
@@ -53,7 +51,7 @@ export async function PolyglotNavLink({ payload, user }: { payload: Payload; use
 
 /** Dashboard banner while translation is stopped (credits, quota, key), for people who may manage translations. */
 export async function PolyglotStopBanner({ payload, user }: { payload: Payload; user?: unknown }) {
-  if (!(await mayManage(payload, user))) return null
+  if (!(await managerSignedIn(payload, user))) return null
   const { stop } = await loadSettings(payload, polyglotOf(payload))
   if (!stop) return null
   return <StopNotice stop={stop} href={`${payload.config.routes.admin}/polyglot`} />

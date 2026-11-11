@@ -75,9 +75,12 @@ export type PolyglotOptions = {
   writeContext?: (args: { inRequest: boolean }) => RequestContext
   /** Short description for the translator ("Content of a page on a reptile-care website"). */
   describe?: (collection: string) => string
-  /** Who may see coverage and start translations in the admin. Default: any signed-in user. */
+  /**
+   * Who may see coverage, start translations and read the translation memory. Only an exact `true` counts; anything
+   * else, an error included, is no. Default (since 2026-11-11): users of the admin collection (`admin.user`) only.
+   */
   canManage?: (args: { req: PayloadRequest }) => boolean | Promise<boolean>
-  /** Who may change Translation settings (pause, languages, glossary…). Default: `canManage`. */
+  /** Who may read and change Translation settings (pause, languages, glossary…). Only `true` counts. Default: `canManage`. */
   canConfigure?: (args: { req: PayloadRequest }) => boolean | Promise<boolean>
   /** Add the Translation settings global (admin-editable pause, skipped languages, glossary, usage). Default true. */
   settings?: boolean

@@ -1,5 +1,7 @@
 import type { GlobalConfig, Payload, PayloadRequest } from 'payload'
 
+import { mayConfigure } from './access.js'
+import { polyglotOf } from './translate.js'
 import type { EngineStop, QuotaExceededError, ResolvedPolyglot } from './types.js'
 
 export type GlossaryEntry = { locale: string; term: string; translation: string }
@@ -22,7 +24,8 @@ const month = () => new Date().toISOString().slice(0, 7)
 const hasGlobal = (payload: Payload, slug: string) => payload.config.globals?.some((g) => g.slug === slug)
 
 export function settingsGlobal(o: ResolvedPolyglot, labels: { label: string; value: string }[]): GlobalConfig {
-  const access = async ({ req }: { req: PayloadRequest }) => Boolean(req.user) && (await (o.canConfigure ?? o.canManage ?? (() => true))({ req }))
+  // Asked at request time, so the options Payload holds are the ones that decide. Only an exact `true` counts.
+  const access = ({ req }: { req: PayloadRequest }) => mayConfigure((req.payload && polyglotOf(req.payload)) || o, req)
   return {
     slug: o.settingsSlug,
     label: 'Translation settings',

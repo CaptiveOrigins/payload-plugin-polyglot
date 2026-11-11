@@ -1,12 +1,13 @@
 import { APIError, addDataAndFileToRequest, type Endpoint, type PayloadRequest } from 'payload'
 
+import { mayManage } from './access.js'
 import { charactersThisMonth, loadSettings, STOP_HELP } from './settings.js'
 import { coverage, polyglotOf, syncAll } from './translate.js'
 
 const allowed = async (req: PayloadRequest) => {
   const o = polyglotOf(req.payload)
   if (!req.user) throw new APIError('Sign in first.', 401, undefined, true)
-  if (!(await (o.canManage ?? (() => true))({ req }))) throw new APIError('Not allowed.', 403, undefined, true)
+  if (!(await mayManage(o, req))) throw new APIError('Not allowed.', 403, undefined, true)
   return o
 }
 const list = (v: unknown) => (typeof v === 'string' && v ? v.split(',') : Array.isArray(v) ? v.map(String) : undefined)

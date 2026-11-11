@@ -2,6 +2,15 @@
 
 Kept by this repo's owning session, per `~/Code/CLAUDE.md` "Test self-audits". Newest first.
 
+## 2026-11-11: managing translations fails closed
+
+Suite: 32 tests before, 38 after, in 4 files (`npx vitest run`, real Payload, in-memory MongoDB, the fake translator only; nothing is sent to a translation service). The test install now has two auth collections, `users` (the admin collection) and `members`.
+
+- **The change.** `src/access.ts`: `exactlyTrue` (only `true` passes; a throw or rejection is `false`), `isAdminUser` (the user's collection equals `admin.user`), `mayManage` and `mayConfigure` (signed in, then the site's rule or, with none, admin users only; exactly `true`). Used by the coverage and sync endpoints (401 or 403, never a 500), the settings global's read and update (it no longer passes the site's answer to Payload), the Translations view, nav link and stop banner, and the memory and status collections' read and delete (before: anyone signed in).
+- **Tests.** `polyglot.test.ts` "who manages translations": with the default, a member is 403 at coverage, sync, settings read and update, memory read and status delete, and an admin user gets in (sync checked through `enabled: false`, so nothing is translated); six non-answers from `canManage` (`1`, `'yes'`, `{}`, a query-shaped object, a throw, a rejection) are 403 everywhere; with `true`, the site's rule decides; not signed in is refused even when `canManage` says `true`; the same six from `canConfigure` refuse the settings while managing still works. `admin-access.test.ts`: the view, link and banner by default for a member (no) and an admin (yes), for signed-out people when `canManage` says `true` (no), and for the non-answers (no).
+- **Mutation checks.** 13, each a Python string replace restored byte for byte (SHA-256 checked); all 13 fail the suite: truthy passing in `exactlyTrue`; errors rethrown; the old any-signed-in default; `isAdminUser` without the collection check; the sign-in check dropped (survived at first; the signed-out-with-`true` tests were added for it); `canConfigure` ignored; the old truthy check or the site's raw answer back in the settings global; the old check back in the endpoints, the view, and the nav link and banner; memory and status open to anyone signed in.
+- **Skipped.** The view is checked through its element tree with Payload's admin shell stubbed, not in a real admin. `enabled` (whether the engine may run here) is a spending switch, not access, and still takes a truthy answer; noted for the lead.
+
 ## 2026-11-10: the lead's fixes after the first audit
 
 Suite: 28 → 32 tests in 4 files. In-memory MongoDB and the fake translator only.

@@ -114,9 +114,30 @@ Show visitors what they are reading: `languageStatus(payload, collection, doc, l
 | `writeContext` | | Context for writes (e.g. `{ disableRevalidate: true }` in scripts) |
 | `onPublish` | `true` | Translate after publishing |
 | `onStop` | | Called once when translation stops (`{ payload, stop: { reason, message, at } }`), e.g. to email admins |
-| `canManage` | signed-in users | Who sees the Translations view and can Translate now |
-| `canConfigure` | `canManage` | Who may change Translation settings |
+| `canManage` | admin users | Who sees the Translations view, the translation memory and status, and can Translate now. Only `true` counts: see [Access](#access) |
+| `canConfigure` | `canManage` | Who may read and change Translation settings. Only `true` counts |
 | `settings` | `true` | Add the Translation settings global (`settingsSlug` `polyglot-settings`, `settingsGroup` `Settings`) |
+
+## Access
+
+`canManage` decides who sees the Translations view, its menu link and the stop banner, who calls the
+coverage and Translate now endpoints (which can spend money on the engine), and who reads or clears
+the translation memory and status collections. `canConfigure` decides who reads and changes
+Translation settings, and falls back to `canManage`.
+
+Only an answer of exactly `true` counts. Anything else is a no: `false`, `1`, `'yes'`, an object
+(one shaped like a query included), or an error thrown or rejected. An error doesn't escape as a 500;
+the endpoints answer 403 (401 if nobody is signed in). Nobody who isn't signed in is let in, whatever
+the functions say. What they return is never handed to Payload as access.
+
+With neither option set, only users of your admin collection (`admin.user` in your Payload config,
+usually `users`) are let in. Accounts from any other auth collection, such as site members, are refused.
+
+**Changed 2026-11-11 (unreleased):** the default used to let any signed-in account in, members of
+other auth collections included, so a member could start paid translations, change settings, and
+read or clear the translation memory. Any truthy answer from `canManage` or `canConfigure` also
+counted as yes. Sites relying on the old default must pass the option, for example
+`canManage: ({ req }) => Boolean(req.user)`.
 
 ## License
 

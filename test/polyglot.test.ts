@@ -43,7 +43,11 @@ beforeAll(async () => {
       typescript: { autoGenerate: false },
       db: mongooseAdapter({ url: mongo.getUri('polyglot'), ensureIndexes: true }),
       localization: { locales: ['en', 'es', 'fr'], defaultLocale: 'en', fallback: true },
+      admin: { user: 'users' },
       collections: [
+        // Two auth collections: `users` runs the admin, `members` signs in to the site (made up, 2026-11-11).
+        { slug: 'users', auth: true, fields: [] },
+        { slug: 'members', auth: true, fields: [] },
         {
           slug: 'pages',
           versions: { drafts: true },
@@ -346,5 +350,99 @@ describe('visitPaths', () => {
 
   it('ignores missing paths and paths through plain values', () => {
     expect(found({ meta: null, title: 'Text' }, ['meta.title', 'title.x', 'nope.title'])).toEqual([])
+  })
+})
+
+describe('who manages translations (2026-11-11)', () => {
+  const admin = { id: 'a1', collection: 'users' }
+  const member = { id: 'm1', collection: 'members' }
+  const status = (p: unknown) => (p as Promise<unknown>).then(() => 200, (e: { status?: number }) => e.status ?? 500)
+  const coverageAs = (user: unknown) => status(coverageEndpoint.handler({ payload, user, searchParams: new URLSearchParams() } as never))
+  // `enabled: false` stops a sync after the access check, so nothing is translated: 400 means "let in".
+  const syncAs = async (user: unknown) => {
+    const o = payload.config.custom.polyglot
+    const before = o.enabled
+    o.enabled = () => false
+    try {
+      return await status(syncEndpoint.handler({ payload, user } as never))
+    } finally {
+      o.enabled = before
+    }
+  }
+  const settingsAs = (user: unknown) => status(payload.findGlobal({ slug: 'polyglot-settings' as never, overrideAccess: false, user: user as never }))
+  const updateSettingsAs = (user: unknown) => status(payload.updateGlobal({ slug: 'polyglot-settings' as never, data: { paused: false } as never, overrideAccess: false, user: user as never }))
+  const memoryAs = (user: unknown) => status(payload.find({ collection: 'polyglot-memory' as never, overrideAccess: false, user: user as never }))
+  const stateDeleteAs = (user: unknown) => status(payload.delete({ collection: 'polyglot-state' as never, where: { key: { equals: 'no-such-key' } }, overrideAccess: false, user: user as never }))
+  /** Runs `body` with `canManage` or `canConfigure` answering `answer`, then puts the site's rule back. */
+  const answering = async (key: 'canManage' | 'canConfigure', answer: () => unknown, body: () => Promise<void>) => {
+    const o = payload.config.custom.polyglot
+    const before = o[key]
+    o[key] = answer
+    try {
+      await body()
+    } finally {
+      o[key] = before
+    }
+  }
+  const noes: [string, () => unknown][] = [
+    ['1', () => 1],
+    ["'yes'", () => 'yes'],
+    ['{}', () => ({})],
+    ['a query-shaped object', () => ({ id: { exists: true } })],
+    ['a thrown error', () => {
+      throw new Error('directory down')
+    }],
+    ['a rejected promise', async () => {
+      throw new Error('directory down')
+    }],
+  ]
+
+  it('by default refuses a member of another auth collection everything, and lets an admin user in', async () => {
+    expect(await coverageAs(member)).toBe(403)
+    expect(await syncAs(member)).toBe(403)
+    expect(await settingsAs(member)).toBe(403)
+    expect(await updateSettingsAs(member)).toBe(403)
+    expect(await memoryAs(member)).toBe(403)
+    expect(await stateDeleteAs(member)).toBe(403)
+    expect(await coverageAs(admin)).toBe(200)
+    expect(await syncAs(admin)).toBe(400)
+    expect(await settingsAs(admin)).toBe(200)
+    expect(await updateSettingsAs(admin)).toBe(200)
+    expect(await memoryAs(admin)).toBe(200)
+    expect(await stateDeleteAs(admin)).toBe(200)
+  })
+
+  it('takes only an exact true from canManage: truthy answers, queries and errors are 403, never a 500', async () => {
+    for (const [label, answer] of noes)
+      await answering('canManage', answer, async () => {
+        expect(await coverageAs(admin), label).toBe(403)
+        expect(await syncAs(admin), label).toBe(403)
+        expect(await settingsAs(admin), label).toBe(403) // canConfigure falls back to canManage
+        expect(await updateSettingsAs(admin), label).toBe(403)
+        expect(await memoryAs(admin), label).toBe(403)
+        expect(await stateDeleteAs(admin), label).toBe(403)
+      })
+    await answering('canManage', () => true, async () => {
+      expect(await coverageAs(member)).toBe(200) // the site's rule, not the default, decides
+      expect(await syncAs(member)).toBe(400)
+      expect(await settingsAs(member)).toBe(200)
+      // Nobody signed in is a manager, whatever the site's rule says.
+      expect(await settingsAs(null)).toBe(403)
+      expect(await memoryAs(null)).toBe(403)
+    })
+  })
+
+  it('takes only an exact true from canConfigure for the settings', async () => {
+    await answering('canManage', () => true, async () => {
+      for (const [label, answer] of noes)
+        await answering('canConfigure', answer, async () => {
+          expect(await settingsAs(admin), label).toBe(403)
+          expect(await updateSettingsAs(admin), label).toBe(403)
+          expect(await coverageAs(admin), label).toBe(200) // managing is a separate question
+        })
+      await answering('canConfigure', () => true, async () => {
+        expect(await updateSettingsAs(admin)).toBe(200)
+      })
+    })
   })
 })

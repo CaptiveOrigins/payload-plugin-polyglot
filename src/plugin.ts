@@ -1,9 +1,10 @@
-import type { CollectionAfterChangeHook, CollectionBeforeChangeHook, CollectionConfig, Field, Plugin } from 'payload'
+import type { Access, CollectionAfterChangeHook, CollectionBeforeChangeHook, CollectionConfig, Field, Plugin } from 'payload'
 
 import { FILLER, SKIP_KEYS } from './text.js'
 import { coverageEndpoint, syncEndpoint } from './endpoints.js'
 import { loadSettings, settingsGlobal } from './settings.js'
-import { included, translateDocument } from './translate.js'
+import { included, polyglotOf, translateDocument } from './translate.js'
+import { mayManage } from './access.js'
 import type { PolyglotOptions, ResolvedPolyglot } from './types.js'
 
 /** Marks the listed fields localized (paths ignore tabs/rows; `a.b` reaches into array/group `a`). */
@@ -30,11 +31,14 @@ export function localizeFields(fields: Field[], targets: Set<string>, prefix = '
   })
 }
 
+/** Translation memory and status: managers only (an exact `true` from `canManage`, else admin users). */
+const managers: Access = ({ req }) => mayManage(polyglotOf(req.payload), req)
+
 const stateCollection = (slug: string): CollectionConfig => ({
   slug,
   labels: { singular: 'Translation status', plural: 'Translation status' },
   admin: { hidden: true },
-  access: { read: ({ req }) => Boolean(req.user), create: () => false, update: () => false, delete: ({ req }) => Boolean(req.user) },
+  access: { read: managers, create: () => false, update: () => false, delete: managers },
   fields: [
     { name: 'key', type: 'text', required: true, unique: true },
     { name: 'collection', type: 'text', required: true, index: true },
@@ -51,7 +55,7 @@ const memoryCollection = (slug: string): CollectionConfig => ({
   slug,
   labels: { singular: 'Translation', plural: 'Translation memory' },
   admin: { useAsTitle: 'source', defaultColumns: ['locale', 'source', 'text', 'createdAt'], description: 'Every machine-translated sentence, reused so nothing is translated twice.' },
-  access: { read: ({ req }) => Boolean(req.user), create: () => false, update: () => false, delete: ({ req }) => Boolean(req.user) },
+  access: { read: managers, create: () => false, update: () => false, delete: managers },
   fields: [
     { name: 'key', type: 'text', required: true, unique: true, admin: { hidden: true } },
     { name: 'locale', type: 'text', required: true, index: true },
