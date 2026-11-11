@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-11)
 
 - **Behavior change (2026-11-11): only admin users manage translations by default.** With no `canManage`, any signed-in account of any auth collection, members included, could start translations (which can cost money), change Translation settings, and read or clear the translation memory and status. Now only users of the admin collection (`admin.user` in the Payload config) can. Sites relying on the old default must pass the option.
 - **Only an exact `true` from `canManage` or `canConfigure` counts.** Any other truthy answer, an object or an error is a no: 401 or 403 from the endpoints, never a 500, and no view, menu link or banner. The settings global no longer passes the site's answer to Payload as its access.

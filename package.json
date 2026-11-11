@@ -1,6 +1,6 @@
 {
   "name": "@captiveorigins/payload-plugin-polyglot",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Translation for Payload: keeps content in every language, a little at a time, translating on publish and in a sweep, remembering every sentence, and never overwriting a human-reviewed translation.",
   "homepage": "https://github.com/CaptiveOrigins/payload-plugin-polyglot#readme",
   "bugs": {
