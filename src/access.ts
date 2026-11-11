@@ -11,6 +11,13 @@ export async function exactlyTrue(check: () => unknown): Promise<boolean> {
   }
 }
 
+/**
+ * May translation run here: with no `enabled`, yes; otherwise only an answer of exactly `true` (since 2026-11-11).
+ * A truthy non-`true` answer, a throw or a rejection means turned off.
+ */
+export const translationEnabled = (o: Pick<ResolvedPolyglot, 'enabled'>, payload: Payload, req?: PayloadRequest): Promise<boolean> =>
+  o.enabled ? exactlyTrue(() => o.enabled!({ payload, req })) : Promise.resolve(true)
+
 /** The signed-in user belongs to the admin collection (`admin.user` in the Payload config). No admin collection: no. */
 export const isAdminUser = (payload: Payload | undefined, user: unknown): boolean => {
   const adminCollection = payload?.config?.admin?.user

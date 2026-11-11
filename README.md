@@ -104,7 +104,7 @@ Show visitors what they are reading: `languageStatus(payload, collection, doc, l
 | `translatorFor` | | Engine per language |
 | `keep` | `[]` | Terms never translated |
 | `maxCharactersPerRun` | no cap | Stop a sweep after this many characters |
-| `enabled` | always | Whether a request/run may call the engine (keys, environments) |
+| `enabled` | always | Whether a request may call the engine (keys, environments). Only an exact `true` turns it on; any other answer, or an error, is off. `syncAll()` doesn't ask it: a script decides for itself |
 | `include` | published docs | Which documents to translate |
 | `skip` | lorem ipsum | Text never sent |
 | `skipKeys` | urls, ids, slugs… | Keys whose strings are never text |

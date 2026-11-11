@@ -1,6 +1,6 @@
 import { APIError, addDataAndFileToRequest, type Endpoint, type PayloadRequest } from 'payload'
 
-import { mayManage } from './access.js'
+import { mayManage, translationEnabled } from './access.js'
 import { charactersThisMonth, loadSettings, STOP_HELP } from './settings.js'
 import { coverage, polyglotOf, syncAll } from './translate.js'
 
@@ -20,7 +20,7 @@ export const coverageEndpoint: Endpoint = {
     const o = await allowed(req)
     const rows = await coverage(req.payload, { collections: list(req.searchParams?.get('collections')) })
     const s = await loadSettings(req.payload, o)
-    const enabled = o.enabled ? await o.enabled({ payload: req.payload, req }) : true
+    const enabled = await translationEnabled(o, req.payload, req)
     return Response.json({
       locales: o.locales,
       rows,
@@ -42,7 +42,7 @@ export const syncEndpoint: Endpoint = {
   method: 'post',
   handler: async (req) => {
     const o = await allowed(req)
-    if (o.enabled && !(await o.enabled({ payload: req.payload, req }))) throw new APIError('Translation is turned off here.', 400, undefined, true)
+    if (!(await translationEnabled(o, req.payload, req))) throw new APIError('Translation is turned off here.', 400, undefined, true)
     await addDataAndFileToRequest(req)
     const filters = { collections: list(req.data?.collections), locales: list(req.data?.locales) }
     const run = () => syncAll(req.payload, { ...filters, force: true }).then((r) => req.payload.logger.info({ ...r, ...filters }, 'Polyglot: translate now'))

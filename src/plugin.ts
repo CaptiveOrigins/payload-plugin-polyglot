@@ -4,7 +4,7 @@ import { FILLER, SKIP_KEYS } from './text.js'
 import { coverageEndpoint, syncEndpoint } from './endpoints.js'
 import { loadSettings, settingsGlobal } from './settings.js'
 import { included, polyglotOf, translateDocument } from './translate.js'
-import { mayManage } from './access.js'
+import { mayManage, translationEnabled } from './access.js'
 import type { PolyglotOptions, ResolvedPolyglot } from './types.js'
 
 /** Marks the listed fields localized (paths ignore tabs/rows; `a.b` reaches into array/group `a`). */
@@ -129,7 +129,7 @@ export const polyglotPlugin =
     const onPublish: CollectionAfterChangeHook = async ({ collection, doc, req, context }) => {
       if (!resolved.onPublish || context?.polyglot || (req.locale && req.locale !== resolved.defaultLocale)) return doc
       if (!included(resolved, collection.slug, doc)) return doc
-      if (resolved.enabled && !(await resolved.enabled({ payload: req.payload, req }))) return doc
+      if (!(await translationEnabled(resolved, req.payload, req))) return doc
       if ((await loadSettings(req.payload, resolved)).paused) return doc
       const run = () => translateDocument(req.payload, collection.slug, String(doc.id), { inRequest: true }).catch((err) => req.payload.logger.error({ err }, 'Polyglot: publish translation failed'))
       try {

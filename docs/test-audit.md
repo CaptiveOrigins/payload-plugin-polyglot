@@ -2,6 +2,15 @@
 
 Kept by this repo's owning session, per `~/Code/CLAUDE.md` "Test self-audits". Newest first.
 
+## 2026-11-11: `enabled` takes only an exact true
+
+Suite: 38 tests before, 47 after, in 5 files. Closes the `enabled` note under "Skipped" below.
+
+- **The change.** `src/access.ts`: `translationEnabled` (no `enabled` is on; otherwise `exactlyTrue`, so a throw or rejection is off). Used by the publish hook, the coverage endpoint's `enabled` flag and the sync endpoint.
+- **Tests.** `test/enabled.test.ts`, its own install with a fake translator and Next's `after()` mocked to run the work at once: seven non-answers (`1`, `'yes'`, `{}`, an array, a resolved `'true'`, a throw, a rejection) mean nothing is translated on publish, sync is 400 (never a 500), and coverage reports off; exactly `true` translates on publish and from sync; no option means on.
+- **Mutation checks.** 6, each a Python string replace restored byte for byte (SHA-256 checked); all 6 fail: the helper taking any truthy answer; the old check back in the hook, in sync, or in coverage; the hook's check removed; no option meaning off (survived until the "no enabled option" test was added).
+- **Gap, for the lead.** `syncAll()` doesn't ask `enabled`; the README now says so. Whether the sweep should is a decision, not a fix.
+
 ## 2026-11-11: managing translations fails closed
 
 Suite: 32 tests before, 38 after, in 4 files (`npx vitest run`, real Payload, in-memory MongoDB, the fake translator only; nothing is sent to a translation service). The test install now has two auth collections, `users` (the admin collection) and `members`.

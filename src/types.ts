@@ -49,7 +49,7 @@ export type PolyglotOptions = {
   /** Fields to keep in every language, per collection. Dotted paths reach into arrays/groups: `sections.heading`. */
   collections: Record<string, string[]>
   translator: Translator
-  /** May this request/run call the translator? Default: always. Use it for keys, budgets or environments. */
+  /** May this request/run call the translator? Default: always. Use it for keys, budgets or environments. Only an exact `true` turns it on; any other answer, or an error, is off. */
   enabled?: (args: { payload: Payload; req?: PayloadRequest }) => boolean | Promise<boolean>
   /** Which documents to translate. Default: published ones (or all, without drafts). */
   include?: (args: { collection: string; doc: Record<string, unknown> }) => boolean
