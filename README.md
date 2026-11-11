@@ -34,6 +34,14 @@ have, a little at a time.
 - **Engine per language** (`translatorFor`), e.g. one engine for European languages and another
   for the rest.
 
+## On its own, and with others
+
+**On its own.** Polyglot needs Payload localization turned on (it refuses to start without it) and a translation engine: Microsoft Translator or Claude, both built in, or your own. It doesn't use any other Captive Origins plugin.
+
+**Works with:** nothing designed yet. It translates the fields you list in any collection, including collections other plugins add, as long as it comes last in `plugins`.
+
+**Family.** Polyglot is in the Locale family, with Places, which is named but not built yet. Locale is marked to be split, so its members and name will change, and all the families are a working draft.
+
 ## Install
 
 ```bash
