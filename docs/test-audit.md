@@ -9,7 +9,7 @@ Suite: 38 tests before, 47 after, in 5 files. Closes the `enabled` note under "S
 - **The change.** `src/access.ts`: `translationEnabled` (no `enabled` is on; otherwise `exactlyTrue`, so a throw or rejection is off). Used by the publish hook, the coverage endpoint's `enabled` flag and the sync endpoint.
 - **Tests.** `test/enabled.test.ts`, its own install with a fake translator and Next's `after()` mocked to run the work at once: seven non-answers (`1`, `'yes'`, `{}`, an array, a resolved `'true'`, a throw, a rejection) mean nothing is translated on publish, sync is 400 (never a 500), and coverage reports off; exactly `true` translates on publish and from sync; no option means on.
 - **Mutation checks.** 6, each a Python string replace restored byte for byte (SHA-256 checked); all 6 fail: the helper taking any truthy answer; the old check back in the hook, in sync, or in coverage; the hook's check removed; no option meaning off (survived until the "no enabled option" test was added).
-- **Gap, for the lead.** `syncAll()` doesn't ask `enabled`; the README now says so. Whether the sweep should is a decision, not a fix.
+- **Sweep, added the same day.** `syncAll()` asks `enabled` first, with the caller's request or a `createLocalReq` one with no user, and returns `stopped: 'off'` (logged) unless it's exactly `true`, dry runs included. Suite 47 → 56. Tests: `false` and the seven non-answers make no translator calls and read no documents, plain and dry run; `true` sweeps a pending page, and `enabled` saw the payload and a userless local request. Mutation checks, 5, all fail: the check removed, any truthy answer taken, a throw escaping, dry runs let through, no request passed.
 
 ## 2026-11-11: managing translations fails closed
 

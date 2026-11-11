@@ -45,7 +45,7 @@ export const syncEndpoint: Endpoint = {
     if (!(await translationEnabled(o, req.payload, req))) throw new APIError('Translation is turned off here.', 400, undefined, true)
     await addDataAndFileToRequest(req)
     const filters = { collections: list(req.data?.collections), locales: list(req.data?.locales) }
-    const run = () => syncAll(req.payload, { ...filters, force: true }).then((r) => req.payload.logger.info({ ...r, ...filters }, 'Polyglot: translate now'))
+    const run = () => syncAll(req.payload, { ...filters, force: true, req }).then((r) => req.payload.logger.info({ ...r, ...filters }, 'Polyglot: translate now'))
     try {
       const { after } = await import('next/server.js')
       after(run)

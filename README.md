@@ -74,7 +74,7 @@ Run the sweep from a cron job or script:
 ```ts
 import { syncAll } from '@captiveorigins/payload-plugin-polyglot'
 
-const report = await syncAll(payload) // { translated, pending, stopped: 'done' | 'budget' | 'quota' | 'paused', … }
+const report = await syncAll(payload) // { translated, pending, stopped: 'done' | 'budget' | 'quota' | 'paused' | 'off', … }
 ```
 
 Claude instead of Microsoft:
@@ -104,7 +104,7 @@ Show visitors what they are reading: `languageStatus(payload, collection, doc, l
 | `translatorFor` | | Engine per language |
 | `keep` | `[]` | Terms never translated |
 | `maxCharactersPerRun` | no cap | Stop a sweep after this many characters |
-| `enabled` | always | Whether a request may call the engine (keys, environments). Only an exact `true` turns it on; any other answer, or an error, is off. `syncAll()` doesn't ask it: a script decides for itself |
+| `enabled` | always | Whether a request may call the engine (keys, environments). Only an exact `true` turns it on; any other answer, or an error, is off. `syncAll()` asks it first and skips the whole sweep when off (`stopped: 'off'`); from a cron or script it gets a local request with no user |
 | `include` | published docs | Which documents to translate |
 | `skip` | lorem ipsum | Text never sent |
 | `skipKeys` | urls, ids, slugs… | Keys whose strings are never text |

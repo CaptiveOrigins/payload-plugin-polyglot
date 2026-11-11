@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { translationEnabled } from '../src/access.js'
 import { coverageEndpoint, syncEndpoint } from '../src/endpoints.js'
-import { polyglotPlugin, type Item, type Translator } from '../src/index.js'
+import { polyglotPlugin, syncAll, type Item, type Translator } from '../src/index.js'
 
 // Next's `after()` runs the work here and now, so a translation that starts is seen by the fake translator.
 const pending: Promise<unknown>[] = []
@@ -25,6 +25,7 @@ const translator: Translator = {
   },
 }
 let answer: () => unknown = () => true
+const asked: { payload?: unknown; req?: { user?: unknown; payload?: unknown } }[] = []
 
 beforeAll(async () => {
   mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } })
@@ -40,7 +41,7 @@ beforeAll(async () => {
         { slug: 'users', auth: true, fields: [] },
         { slug: 'pages', versions: { drafts: true }, fields: [{ name: 'title', type: 'text', required: true }] },
       ],
-      plugins: [polyglotPlugin({ collections: { pages: ['title'] }, translator, enabled: (() => answer()) as never })],
+      plugins: [polyglotPlugin({ collections: { pages: ['title'] }, translator, enabled: ((args: (typeof asked)[number]) => (asked.push(args), answer())) as never })],
     }),
   })
 }, 120_000)
@@ -89,6 +90,34 @@ describe('whether translation may run (2026-11-11)', () => {
     expect(await status(syncEndpoint.handler({ payload, user: admin } as never))).toBe(200)
     await settle()
     expect(sent).toContain('es:On page, edited')
+  })
+
+  it.each([['false', () => false] as [string, () => unknown], ...nonAnswers])('skips the whole sweep when enabled answers %s: no translator calls', async (_, a) => {
+    answer = () => true
+    await publish(`Sweep page ${_}`) // published while on, edited below while off, so the sweep would have work
+    await settle()
+    answer = a
+    await payload.update({ collection: 'pages' as never, where: { title: { equals: `Sweep page ${_}` } }, data: { title: `Sweep page ${_}, edited` } as never })
+    await settle()
+    sent.length = 0
+    expect(await syncAll(payload)).toMatchObject({ stopped: 'off', documents: 0, translated: 0 })
+    expect(await syncAll(payload, { force: true, dryRun: true })).toMatchObject({ stopped: 'off', documents: 0 })
+    expect(sent).toEqual([])
+  })
+
+  it('runs the sweep with exactly true, asking enabled with a local request that has no user', async () => {
+    answer = () => false
+    await publish('Sweep on page')
+    answer = () => true
+    sent.length = 0
+    asked.length = 0
+    const r = await syncAll(payload)
+    expect(r.stopped).toBe('done')
+    expect(r.translated).toBeGreaterThan(0)
+    expect(sent).toContain('es:Sweep on page')
+    expect(asked[0]?.payload).toBe(payload)
+    expect(asked[0]?.req?.payload).toBe(payload)
+    expect(asked[0]?.req?.user).toBeFalsy()
   })
 
   it('runs when the site gives no enabled option', async () => {

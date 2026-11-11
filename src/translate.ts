@@ -1,6 +1,7 @@
-import type { CollectionSlug, Payload } from 'payload'
+import { createLocalReq, type CollectionSlug, type Payload, type PayloadRequest } from 'payload'
 
 import { fingerprint, memoryKey, textsOf, visitPaths, type Json } from './text.js'
+import { translationEnabled } from './access.js'
 import { clearStop, loadSettings, recordStop, recordUsage, type Settings } from './settings.js'
 import { QuotaExceededError, type DocumentResult, type Item, type ResolvedPolyglot, type StopReason, type TranslateArgs } from './types.js'
 
@@ -199,7 +200,8 @@ export type SyncReport = {
   reviewedStale: number
   failed: number
   characters: number
-  stopped: 'done' | 'budget' | 'quota' | 'paused'
+  /** `off`: the site's `enabled` didn't answer exactly `true`, so nothing was read or sent. */
+  stopped: 'done' | 'budget' | 'quota' | 'paused' | 'off'
   /** With `stopped: 'quota'`: credits, quota or auth (see Translation settings). */
   stopReason?: StopReason
 }
@@ -215,10 +217,16 @@ export type SyncReport = {
  */
 export async function syncAll(
   payload: Payload,
-  opts: { dryRun?: boolean; useBatch?: boolean; limit?: number; collections?: string[]; locales?: string[]; force?: boolean } = {},
+  opts: { dryRun?: boolean; useBatch?: boolean; limit?: number; collections?: string[]; locales?: string[]; force?: boolean; req?: PayloadRequest } = {},
 ): Promise<SyncReport> {
   const o = polyglotOf(payload)
   const report: SyncReport = { documents: 0, upToDate: 0, translated: 0, pending: 0, reviewedStale: 0, failed: 0, characters: 0, stopped: 'done' }
+  // The site's `enabled` decides first, dry runs included. With no request (a cron or script), it gets a local
+  // request with no user, from `createLocalReq`. Only an exact `true` goes on; a throw is off.
+  if (o.enabled && !(await translationEnabled(o, payload, opts.req ?? ((await createLocalReq({}, payload)) as PayloadRequest)))) {
+    payload.logger.info('Polyglot: sweep skipped: translation is off')
+    return { ...report, stopped: 'off' }
+  }
   const settings = await loadSettings(payload, o)
   if (settings.paused && !opts.force && !opts.dryRun) return { ...report, stopped: 'paused' }
   const budget = new Budget(settings.maxCharactersPerRun ?? o.maxCharactersPerRun)
