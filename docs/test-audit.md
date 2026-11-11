@@ -2,6 +2,20 @@
 
 Kept by this repo's owning session, per `~/Code/CLAUDE.md` "Test self-audits". Newest first.
 
+## 2026-11-10: the lead's fixes after the first audit
+
+Suite: 28 → 32 tests in 4 files. In-memory MongoDB and the fake translator only.
+
+**Fixed: dotted paths into groups.** In `visitPaths` (`src/text.ts`), the `else if` for groups belonged to the `if` inside the array loop, so a path like `meta.title` found no text. The field was made per-language but never translated. Arrays and plain fields were fine. The branches now have braces, and a group is walked like a row.
+
+This also closed a half-translation gap: since group text wasn't counted, a document with `meta.title` could be written in a language with its other fields translated and the group left in the default language. Group text now counts, so a language is written only when every listed text, groups included, has a translation.
+
+Existing documents with group paths get a new fingerprint, so the next sweep translates their group text once.
+
+Tests (`polyglot.test.ts`): "translates a dotted path into a group, and leaves the group's other fields shared", "writes nothing for a language whose group text the engine left out", and `visitPaths` "reaches into groups, arrays, groups in arrays and plain fields, and only the listed paths" and "ignores missing paths…". The earlier array, plain-field and half-translation tests still pass.
+
+Mutation check: putting the misplaced `else` back fails all 3 group tests; restored byte for byte.
+
 ## 2026-11-10: first audit
 
 Suite before: 11 tests in 2 files. After: 28 tests in 4 files. Every test uses fakes: an in-memory MongoDB, a fake translator, a fake `fetch` for Microsoft and a fake Anthropic client. Nothing reaches a real service.

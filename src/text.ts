@@ -57,8 +57,9 @@ export const memoryKey = (locale: string, text: string) => crypto.createHash('sh
 
 /**
  * Visits the text of exactly the listed paths of a document: `title` visits the
- * whole field; `sections.heading` only the heading of each section (other fields
- * of the rows, shared across languages, are never touched).
+ * whole field; `sections.heading` only the heading of each section, and
+ * `meta.title` only the title inside the `meta` group (other fields of the rows
+ * or group, shared across languages, are never touched).
  */
 export function visitPaths(source: Record<string, Json>, paths: string[], rules: Rules, onText: (text: string, set: (t: string) => void) => void) {
   const walk = (holder: Record<string, Json>, segs: string[]) => {
@@ -71,8 +72,13 @@ export function visitPaths(source: Record<string, Json>, paths: string[], rules:
       } else if (value && typeof value === 'object') visitText(value, rules, onText)
       return
     }
-    if (Array.isArray(value)) for (const row of value) if (row && typeof row === 'object' && !Array.isArray(row)) walk(row as Record<string, Json>, rest)
-    else if (value && typeof value === 'object' && !Array.isArray(value)) walk(value as Record<string, Json>, rest)
+    if (Array.isArray(value)) {
+      // An array field: the rest of the path in every row.
+      for (const row of value) if (row && typeof row === 'object' && !Array.isArray(row)) walk(row as Record<string, Json>, rest)
+    } else if (value && typeof value === 'object') {
+      // A group field: the rest of the path inside it.
+      walk(value as Record<string, Json>, rest)
+    }
   }
   for (const p of paths) walk(source, p.split('.'))
 }

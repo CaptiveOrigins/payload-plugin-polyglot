@@ -4,6 +4,7 @@ import { buildConfig, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { coverageEndpoint, syncEndpoint } from '../src/endpoints.js'
+import { visitPaths } from '../src/text.js'
 import { coverage, languageStatus, loadSettings, microsoftTranslator, polyglotPlugin, QuotaExceededError, syncAll, translateDocument, type Item, type Translator } from '../src/index.js'
 
 let payload: Payload
@@ -52,10 +53,11 @@ beforeAll(async () => {
             { name: 'body', type: 'json' },
             { name: 'links', type: 'array', fields: [{ name: 'label', type: 'text' }, { name: 'url', type: 'text' }] },
             { name: 'sections', type: 'array', fields: [{ name: 'heading', type: 'text' }, { name: 'note', type: 'text' }] },
+            { name: 'meta', type: 'group', fields: [{ name: 'title', type: 'text' }, { name: 'note', type: 'text' }] },
           ],
         },
       ],
-      plugins: [polyglotPlugin({ collections: { pages: ['title', 'body', 'links', 'sections.heading'] }, translator, keep: ['OnePedigree'], onStop: ({ stop }) => void stops.push(stop.reason) })],
+      plugins: [polyglotPlugin({ collections: { pages: ['title', 'body', 'links', 'sections.heading', 'meta.title'] }, translator, keep: ['OnePedigree'], onStop: ({ stop }) => void stops.push(stop.reason) })],
     }),
   })
 }, 120_000)
@@ -280,5 +282,69 @@ describe('access and data safety', () => {
     expect(r).toMatchObject({ stopped: 'budget', characters: 0 })
     expect(sent).toHaveLength(0)
     await reset()
+  })
+
+  it('translates a dotted path into a group, and leaves the group’s other fields shared', async () => {
+    await reset()
+    const page = await payload.create({
+      collection: 'pages' as never,
+      data: { title: 'Grouped', meta: { title: 'Search title', note: 'Shared group note' }, sections: [{ heading: 'Row heading', note: 'row note' }], _status: 'published' } as never,
+    })
+    const id = String(page.id)
+    expect((await translateDocument(payload, 'pages', id, { locales: ['es'] })).translated).toEqual(['es'])
+    const es = await read(id, 'es')
+    expect(es.title).toBe('[es] Grouped')
+    expect(es.meta).toMatchObject({ title: '[es] Search title', note: 'Shared group note' })
+    expect(es.sections[0]).toMatchObject({ heading: '[es] Row heading', note: 'row note' })
+    expect((await read(id, 'en')).meta).toMatchObject({ title: 'Search title', note: 'Shared group note' })
+  })
+
+  it('writes nothing for a language whose group text the engine left out', async () => {
+    await reset()
+    const page = await payload.create({ collection: 'pages' as never, data: { title: 'Half group', meta: { title: 'Untranslated meta' }, _status: 'published' } as never })
+    const id = String(page.id)
+    const real = translator.translate
+    translator.translate = async (a) => new Map([...(await real(a))].filter(([, t]) => !t.includes('Untranslated meta')))
+    const r = await translateDocument(payload, 'pages', id, { locales: ['es'] })
+    translator.translate = real
+    expect(r.failed).toEqual(['es'])
+    const es = await read(id, 'es')
+    expect(es.title).toBe('Half group') // the default language (fallback): the title wasn't written alone
+    expect(es.meta.title).toBe('Untranslated meta')
+    expect(await languageStatus(payload, 'pages', { id }, 'es')).toBe('pending')
+  })
+})
+
+describe('visitPaths', () => {
+  const rules = { skip: /$^/, skipKeys: new Set(['url']) }
+  const found = (doc: Record<string, unknown>, paths: string[]) => {
+    const out: string[] = []
+    visitPaths(doc as never, paths, rules, (t, set) => (out.push(t), set(`<${t}>`)))
+    return out
+  }
+
+  it('reaches into groups, arrays, groups in arrays and plain fields, and only the listed paths', () => {
+    const doc = {
+      title: 'Plain title',
+      meta: { title: 'Group title', note: 'Group note' },
+      sections: [{ heading: 'First heading', note: 'kept' }, { heading: 'Second heading' }],
+      cards: [{ seo: { title: 'Card title', note: 'card note' } }],
+      deep: { inner: { label: 'Deep label' } },
+    }
+    expect(found(doc, ['title', 'meta.title', 'sections.heading', 'cards.seo.title', 'deep.inner.label'])).toEqual([
+      'Plain title',
+      'Group title',
+      'First heading',
+      'Second heading',
+      'Card title',
+      'Deep label',
+    ])
+    expect(doc.meta).toEqual({ title: '<Group title>', note: 'Group note' })
+    expect(doc.cards[0]!.seo).toEqual({ title: '<Card title>', note: 'card note' })
+    expect(doc.sections[0]).toEqual({ heading: '<First heading>', note: 'kept' })
+  })
+
+  it('ignores missing paths and paths through plain values', () => {
+    expect(found({ meta: null, title: 'Text' }, ['meta.title', 'title.x', 'nope.title'])).toEqual([])
   })
 })
