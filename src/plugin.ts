@@ -167,9 +167,9 @@ export const polyglotPlugin =
             ...config.admin,
             components: {
               ...components,
-              afterNavLinks: [...(components.afterNavLinks ?? []), '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotNavLink'],
-              beforeDashboard: [...(components.beforeDashboard ?? []), '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotStopBanner'],
-              views: { ...components.views, polyglot: { Component: '@captiveorigins/payload-plugin-polyglot/rsc#PolyglotView', path: '/polyglot' } },
+              afterNavLinks: [...(components.afterNavLinks ?? []), '@extantape/payload-plugin-polyglot/rsc#PolyglotNavLink'],
+              beforeDashboard: [...(components.beforeDashboard ?? []), '@extantape/payload-plugin-polyglot/rsc#PolyglotStopBanner'],
+              views: { ...components.views, polyglot: { Component: '@extantape/payload-plugin-polyglot/rsc#PolyglotView', path: '/polyglot' } },
             },
           }
         : config.admin,

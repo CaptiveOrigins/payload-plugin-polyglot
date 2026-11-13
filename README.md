@@ -45,11 +45,11 @@ have, a little at a time.
 ## Install
 
 ```bash
-npm install @captiveorigins/payload-plugin-polyglot
+npm install @extantape/payload-plugin-polyglot
 ```
 
 ```ts
-import { microsoftTranslator, polyglotPlugin } from '@captiveorigins/payload-plugin-polyglot'
+import { microsoftTranslator, polyglotPlugin } from '@extantape/payload-plugin-polyglot'
 
 export default buildConfig({
   localization: { locales: ['en', 'de', 'fr', 'ja'], defaultLocale: 'en', fallback: true },
@@ -72,7 +72,7 @@ export default buildConfig({
 Run the sweep from a cron job or script:
 
 ```ts
-import { syncAll } from '@captiveorigins/payload-plugin-polyglot'
+import { syncAll } from '@extantape/payload-plugin-polyglot'
 
 const report = await syncAll(payload) // { translated, pending, stopped: 'done' | 'budget' | 'quota' | 'paused' | 'off', … }
 ```
@@ -80,7 +80,7 @@ const report = await syncAll(payload) // { translated, pending, stopped: 'done' 
 Claude instead of Microsoft:
 
 ```ts
-import { claudeTranslator } from '@captiveorigins/payload-plugin-polyglot/claude'
+import { claudeTranslator } from '@extantape/payload-plugin-polyglot/claude'
 
 translator: claudeTranslator({ instructions: 'A website for reptile keepers.' }) // ANTHROPIC_API_KEY
 // Default model claude-haiku-5-5; pass { model: 'claude-sonnet-5-5' } for more care.
