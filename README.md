@@ -3,7 +3,7 @@
 Keeps all your [Payload](https://payloadcms.com) 3 content translated into every language you
 have, a little at a time.
 
-> **Beta (0.x).** Used by Captive Origins. Feedback and issues welcome.
+> **Beta (0.x).** Used on a live site. Feedback and issues welcome.
 
 - **Finds your content.** List the fields to translate per collection; they become per-language
   (Payload localization). Slugs, paths, relationships and images stay shared.
@@ -36,7 +36,7 @@ have, a little at a time.
 
 ## On its own, and with others
 
-**On its own.** Polyglot needs Payload localization turned on (it refuses to start without it) and a translation engine: Microsoft Translator or Claude, both built in, or your own. It doesn't use any other Captive Origins plugin.
+**On its own.** Polyglot needs Payload localization turned on (it refuses to start without it) and a translation engine: Microsoft Translator or Claude, both built in, or your own. It doesn't use any other plugin.
 
 **Works with:** nothing designed yet. It translates the fields you list in any collection, including collections other plugins add, as long as it comes last in `plugins`.
 

@@ -200,7 +200,7 @@ describe('polyglot', () => {
     const o = payload.config.custom.polyglot
     await payload.updateGlobal({
       slug: 'polyglot-settings' as never,
-      data: { paused: true, skipLocales: ['fr'], keep: 'Captive Origins\n', instructions: 'Be formal.', glossary: [{ locale: 'es', term: 'keeper', translation: 'cuidador' }] } as never,
+      data: { paused: true, skipLocales: ['fr'], keep: 'Field Guide\n', instructions: 'Be formal.', glossary: [{ locale: 'es', term: 'keeper', translation: 'cuidador' }] } as never,
     })
     const page = await payload.create({ collection: 'pages' as never, data: { title: 'Settings page', _status: 'published' } as never })
     expect(await syncAll(payload)).toMatchObject({ stopped: 'paused', translated: 0 })
@@ -208,7 +208,7 @@ describe('polyglot', () => {
     const r = await syncAll(payload, { force: true })
     expect(r.stopped).toBe('done')
     expect(sent.map((x) => x.locale)).toEqual(['es'])
-    expect(sent[0]).toMatchObject({ keep: ['OnePedigree', 'Captive Origins'], instructions: 'Be formal.', glossary: [{ term: 'keeper', translation: 'cuidador' }] })
+    expect(sent[0]).toMatchObject({ keep: ['OnePedigree', 'Field Guide'], instructions: 'Be formal.', glossary: [{ term: 'keeper', translation: 'cuidador' }] })
     expect(await languageStatus(payload, 'pages', { id: page.id }, 'fr')).toBe('pending')
     const s = await loadSettings(payload, o)
     expect(s.usage.at(-1)!.characters).toBeGreaterThan(0)
